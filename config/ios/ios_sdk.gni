@@ -23,7 +23,7 @@ declare_args() {
   # ios_enable_code_signing_flag=<bool> flag to make the invocation clearer.
   ios_enable_code_signing = true
   ios_code_signing_identity = ""
-  ios_code_signing_identity_description = "iPhone Developer"
+  ios_code_signing_identity_description = ios_device_name + " Developer"
 
   # Prefix for CFBundleIdentifier property of iOS bundles (correspond to the
   # "Organization Identifier" in Xcode). Code signing will fail if no mobile
@@ -81,11 +81,11 @@ if (additional_target_cpus != []) {
 if (ios_sdk_path == "") {
   # Compute default target.
   if (use_ios_simulator) {
-    ios_sdk_name = "iphonesimulator"
-    ios_sdk_platform = "iPhoneSimulator"
+    ios_sdk_name = ios_device_name + "simulator"
+    ios_sdk_platform = ios_device_name + "Simulator"
   } else {
-    ios_sdk_name = "iphoneos"
-    ios_sdk_platform = "iPhoneOS"
+    ios_sdk_name = ios_device_name + "os"
+    ios_sdk_platform = ios_device_name + "OS"
   }
 
   ios_sdk_info_args = []
