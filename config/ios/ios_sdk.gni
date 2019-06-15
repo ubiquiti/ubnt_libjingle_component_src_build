@@ -80,6 +80,15 @@ if (additional_target_cpus != []) {
   }
 }
 
+# https://github.com/rust-lang/rust/issues/48862
+ios_min_version_switch_name = "-m" + ios_device_name
+if (use_ios_simulator) {
+  ios_min_version_switch_name += "simulator"
+} else {
+  ios_min_version_switch_name += "os"
+}
+ios_min_version_switch_name += "-version-min"
+
 if (ios_sdk_path == "") {
   # Compute default target.
   if (use_ios_simulator) {

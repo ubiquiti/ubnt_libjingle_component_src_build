@@ -86,13 +86,7 @@ config("runtime_library") {
     "-stdlib=libc++",
   ]
 
-  if (ios_device_name == "iphone") {
-    if (use_ios_simulator) {
-      common_flags += [ "-mios-simulator-version-min=$ios_deployment_target" ]
-    } else {
-      common_flags += [ "-miphoneos-version-min=$ios_deployment_target" ]
-    }
-  }
+  common_flags += [ "$ios_min_version_switch_name=$ios_deployment_target" ]
 
   if (use_xcode_clang && enable_ios_bitcode && !use_ios_simulator) {
     if (is_debug) {
