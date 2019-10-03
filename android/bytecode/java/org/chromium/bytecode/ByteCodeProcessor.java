@@ -64,7 +64,6 @@ class ByteCodeProcessor {
     private static ClassLoader sFullClassPathClassLoader;
     private static Set<String> sFullClassPathJarPaths;
     private static String sGenerateClassDepsPath;
-    private static Set<String> sSplitCompatClassNames;
     private static ClassPathValidator sValidator;
 
     private static class EntryDataPair {
@@ -113,15 +112,20 @@ class ByteCodeProcessor {
             writer = new ClassWriter(reader, 0);
         }
         ClassVisitor chain = writer;
-        /* DEBUGGING:
-         To see the bytecode for a specific class:
-           if (entry.getName().contains("YourClassName")) {
-             chain = new TraceClassVisitor(chain, new PrintWriter(System.out));
-           }
+        /* DEBUGGING:}
          To see objectweb.asm code that will generate bytecode for a given class:
-           java -cp "third_party/ow2_asm/lib/asm-5.0.1.jar:third_party/ow2_asm/lib/"\
-               "asm-util-5.0.1.jar:out/Debug/lib.java/jar_containing_yourclass.jar" \
-               org.objectweb.asm.util.ASMifier org.package.YourClassName
+
+         java -cp
+         "third_party/ow2_asm/lib/asm.jar:third_party/ow2_asm/lib/asm-util.jar:out/Debug/lib.java/jar_containing_yourclass.jar"
+         org.objectweb.asm.util.ASMifier org.package.YourClassName
+
+         See this pdf for more details: https://asm.ow2.io/asm4-guide.pdf
+
+         To see the bytecode for a specific class, uncomment this code with your class name:
+
+        if (entry.getName().contains("YOUR_CLASS_NAME")) {
+          chain = new TraceClassVisitor(chain, new PrintWriter(System.out));
+        }
         */
         if (sShouldUseThreadAnnotations) {
             chain = new ThreadAssertionClassAdapter(chain);
@@ -132,10 +136,6 @@ class ByteCodeProcessor {
         if (sShouldUseCustomResources) {
             chain = new CustomResourcesClassAdapter(
                     chain, reader.getClassName(), reader.getSuperName(), sFullClassPathClassLoader);
-        }
-        if (!sSplitCompatClassNames.isEmpty()) {
-            chain = new SplitCompatClassAdapter(
-                    chain, sSplitCompatClassNames, sFullClassPathClassLoader);
         }
         reader.accept(chain, 0);
         byte[] patchedByteCode = writer.toByteArray();
@@ -271,13 +271,6 @@ class ByteCodeProcessor {
                 Arrays.asList(Arrays.copyOfRange(args, currIndex, currIndex + directJarsLength)));
         currIndex += directJarsLength;
         sDirectClassPathClassLoader = loadJars(directClassPathJarPaths);
-
-        // Load list of class names that need to be fixed.
-        int splitCompatClassNamesLength = Integer.parseInt(args[currIndex++]);
-        sSplitCompatClassNames = new HashSet<>();
-        sSplitCompatClassNames.addAll(Arrays.asList(
-                Arrays.copyOfRange(args, currIndex, currIndex + splitCompatClassNamesLength)));
-        currIndex += splitCompatClassNamesLength;
 
         // Load all jars that are on the classpath for the input jar for analyzing class hierarchy.
         sFullClassPathJarPaths = new HashSet<>();

@@ -15,10 +15,11 @@
 // See http://dev.chromium.org/developers/testing/threadsanitizer-tsan-v2
 // for the instructions on writing suppressions.
 char kTSanDefaultSuppressions[] =
-    // False positives in libflashplayer.so, libgio.so, libglib.so and
-    // libgobject.so.
+    // False positives in libdconfsettings.so, libflashplayer.so, libgio.so,
+    // libglib.so and libgobject.so.
     // Since we don't instrument them, we cannot reason about the
     // synchronization in them.
+    "race:libdconfsettings*.so\n"
     "race:libflashplayer.so\n"
     "race:libgio*.so\n"
     "race:libglib*.so\n"
@@ -34,45 +35,11 @@ char kTSanDefaultSuppressions[] =
     // [test-only]. http://crbug.com/927330.
     "race:content/browser/net_info_browsertest.cc\n"
 
-    // http://crbug.com/84094.
-    "race:sqlite3StatusSet\n"
-    "race:pcache1EnforceMaxPage\n"
-    "race:pcache1AllocPage\n"
-
     // http://crbug.com/120808
     "race:base/threading/watchdog.cc\n"
 
     // http://crbug.com/157586
     "race:third_party/libvpx/source/libvpx/vp8/decoder/threading.c\n"
-
-    // http://crbug.com/158718
-    "race:third_party/ffmpeg/libavcodec/pthread.c\n"
-    "race:third_party/ffmpeg/libavcodec/pthread_frame.c\n"
-    "race:third_party/ffmpeg/libavcodec/vp8.c\n"
-    "race:third_party/ffmpeg/libavutil/mem.c\n"
-    "race:*HashFrameForTesting\n"
-    "race:third_party/ffmpeg/libavcodec/h264pred.c\n"
-    "race:media::ReleaseData\n"
-
-    // http://crbug.com/239359
-    "race:media::TestInputCallback::OnData\n"
-
-    // http://crbug.com/244385
-    "race:unixTempFileDir\n"
-
-    // http://crbug.com/244755
-    "race:v8::internal::Zone::NewExpand\n"
-
-    // http://crbug.com/244774
-    "race:webrtc::RTPReceiver::ProcessBitrate\n"
-    "race:webrtc::RTPSender::ProcessBitrate\n"
-    "race:webrtc::VideoCodingModuleImpl::Decode\n"
-    "race:webrtc::RTPSender::SendOutgoingData\n"
-    "race:webrtc::LibvpxVp8Encoder::GetEncodedPartitions\n"
-    "race:webrtc::LibvpxVp8Encoder::Encode\n"
-    "race:webrtc::ViEEncoder::DeliverFrame\n"
-    "race:webrtc::vcm::VideoReceiver::Decode\n"
-    "race:webrtc::VCMReceiver::FrameForDecoding\n"
 
     // http://crbug.com/244856
     "race:libpulsecommon*.so\n"
@@ -110,9 +77,6 @@ char kTSanDefaultSuppressions[] =
     // http://crbug.com/328868
     "race:PR_Lock\n"
 
-    // http://crbug.com/347538
-    "race:sctp_timer_start\n"
-
     // http://crbug.com/348982
     "race:cricket::P2PTransportChannel::OnConnectionDestroyed\n"
     "race:cricket::P2PTransportChannel::AddConnection\n"
@@ -137,9 +101,6 @@ char kTSanDefaultSuppressions[] =
 
     // http://crbug.com/415472
     "deadlock:base::trace_event::TraceLog::GetCategoryGroupEnabled\n"
-
-    // http://crbug.com/490856
-    "deadlock:content::TracingControllerImpl::SetEnabledOnFileThread\n"
 
     // Lock inversion in third party code, won't fix.
     // https://crbug.com/455638
@@ -174,12 +135,8 @@ char kTSanDefaultSuppressions[] =
     // https://crbug.com/965722
     "race:content::(anonymous namespace)::CorruptDBRequestHandler\n"
 
-    // https://crbug.com/965724
-    "race:content::NetworkServiceRestartBrowserTest::MonitorRequest\n"
-
-    // https://crbug.com/965726
-    "race:content::RenderFrameHostManagerUnloadBrowserTest::"
-    "MonitorResourceRequest\n"
+    // https://crbug.com/977085
+    "race:vp3_update_thread_context\n"
 
     // End of suppressions.
     ;  // Please keep this semicolon.

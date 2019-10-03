@@ -12,6 +12,8 @@ import sys
 DIR_SOURCE_ROOT = os.path.abspath(
     os.path.join(os.path.dirname(__file__), os.pardir, os.pardir))
 SDK_ROOT = os.path.join(DIR_SOURCE_ROOT, 'third_party', 'fuchsia-sdk', 'sdk')
+IMAGES_ROOT = os.path.join(DIR_SOURCE_ROOT, 'third_party', 'fuchsia-sdk',
+                           'images')
 
 def EnsurePathExists(path):
   """Checks that the file |path| exists on the filesystem and returns the path
@@ -38,9 +40,9 @@ def GetHostArchFromPlatform():
     return 'arm64'
   raise Exception('Unsupported host architecture: %s' % host_arch)
 
-def GetQemuRootForPlatform():
+def GetEmuRootForPlatform(emulator):
   return os.path.join(DIR_SOURCE_ROOT, 'third_party',
-                      'qemu-' + GetHostOsFromPlatform() + '-' +
+                      emulator + '-' + GetHostOsFromPlatform() + '-' +
                        GetHostArchFromPlatform())
 
 def ConnectPortForwardingTask(target, local_port, remote_port = 0):

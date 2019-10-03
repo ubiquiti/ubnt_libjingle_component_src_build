@@ -21,11 +21,6 @@ _SOURCE_ROOT = os.path.abspath(
 sys.path.insert(1, os.path.join(_SOURCE_ROOT, 'third_party'))
 from jinja2 import Template # pylint: disable=F0401
 
-EMPTY_ANDROID_MANIFEST_PATH = os.path.join(
-    _SOURCE_ROOT, 'build', 'android', 'AndroidManifest.xml')
-
-ANDROID_NAMESPACE = 'http://schemas.android.com/apk/res/android'
-TOOLS_NAMESPACE = 'http://schemas.android.com/tools'
 
 # A variation of these maps also exists in:
 # //base/android/java/src/org/chromium/base/LocaleUtils.java
@@ -45,8 +40,12 @@ _ANDROID_TO_CHROMIUM_LANGUAGE_MAP = {
     'no': 'nb',  # 'no' is not a real language. http://crbug.com/920960
 }
 
-
-_xml_namespace_initialized = False
+_ALL_RESOURCE_TYPES = {
+    'anim', 'animator', 'array', 'attr', 'bool', 'color', 'dimen', 'drawable',
+    'font', 'fraction', 'id', 'integer', 'interpolator', 'layout', 'menu',
+    'mipmap', 'plurals', 'raw', 'string', 'style', 'styleable', 'transition',
+    'xml'
+}
 
 
 def ToAndroidLocaleName(chromium_locale):
@@ -336,7 +335,8 @@ def CreateRJavaFiles(srcjar_dir,
                      rjava_build_options,
                      srcjar_out,
                      custom_root_package_name=None,
-                     grandparent_custom_package_name=None):
+                     grandparent_custom_package_name=None,
+                     extra_main_r_text_files=None):
   """Create all R.java files for a set of packages and R.txt files.
 
   Args:
@@ -359,6 +359,7 @@ def CreateRJavaFiles(srcjar_dir,
       as the grandparent_custom_package_name. The format of this package name
       is identical to custom_root_package_name.
       (eg. for vr grandparent_custom_package_name would be "base")
+    extra_main_r_text_files: R.txt files to be added to the root R.java file.
   Raises:
     Exception if a package name appears several times in |extra_res_packages|
   """
@@ -378,9 +379,24 @@ def CreateRJavaFiles(srcjar_dir,
   # Contains the correct values for resources.
   all_resources = {}
   all_resources_by_type = collections.defaultdict(list)
-  for entry in _ParseTextSymbolsFile(main_r_txt_file, fix_package_ids=True):
-    all_resources[(entry.resource_type, entry.name)] = entry
-    all_resources_by_type[entry.resource_type].append(entry)
+
+  main_r_text_files = [main_r_txt_file]
+  if extra_main_r_text_files:
+    main_r_text_files.extend(extra_main_r_text_files)
+  for r_txt_file in main_r_text_files:
+    for entry in _ParseTextSymbolsFile(r_txt_file, fix_package_ids=True):
+      entry_key = (entry.resource_type, entry.name)
+      if entry_key in all_resources:
+        assert entry == all_resources[entry_key], (
+            'Input R.txt %s provided a duplicate resource with a different '
+            'entry value. Got %s, expected %s.' % (r_txt_file, entry,
+                                                   all_resources[entry_key]))
+      else:
+        all_resources[entry_key] = entry
+        all_resources_by_type[entry.resource_type].append(entry)
+        assert entry.resource_type in _ALL_RESOURCE_TYPES, (
+            'Unknown resource type: %s, add to _ALL_RESOURCE_TYPES!' %
+            entry.resource_type)
 
   if custom_root_package_name:
     # Custom package name is available, thus use it for root_r_java_package.
@@ -491,7 +507,7 @@ public final class R {
   return template.render(
       package=package,
       resources=resources_by_type,
-      resource_types=sorted(resources_by_type),
+      resource_types=sorted(_ALL_RESOURCE_TYPES),
       root_package=root_r_java_package,
       has_on_resources_loaded=rjava_build_options.has_on_resources_loaded)
 
@@ -588,17 +604,12 @@ public final class R {
       lstrip_blocks=True)
   return template.render(
       package=package,
-      resource_types=sorted(all_resources_by_type),
+      resource_types=sorted(_ALL_RESOURCE_TYPES),
       has_on_resources_loaded=rjava_build_options.has_on_resources_loaded,
       final_resources=final_resources_by_type,
       non_final_resources=non_final_resources_by_type,
       startIndex=_GetNonSystemIndex,
       parent_path=dep_path)
-
-
-def ExtractPackageFromManifest(manifest_path):
-  """Extract package name from Android manifest file."""
-  return ParseAndroidManifest(manifest_path)[1].get('package')
 
 
 def ExtractBinaryManifestValues(aapt2_path, apk_path):
@@ -890,36 +901,3 @@ def FilterAndroidResourceStringsXml(xml_file_path, string_predicate):
     new_xml_data = GenerateAndroidResourceStringsXml(strings_map, namespaces)
     with open(xml_file_path, 'wb') as f:
       f.write(new_xml_data)
-
-
-def _RegisterElementTreeNamespaces():
-  global _xml_namespace_initialized
-  if not _xml_namespace_initialized:
-    _xml_namespace_initialized = True
-    ElementTree.register_namespace('android', ANDROID_NAMESPACE)
-    ElementTree.register_namespace('tools', TOOLS_NAMESPACE)
-
-
-def ParseAndroidManifest(path):
-  """Parses an AndroidManifest.xml using ElementTree.
-
-  Registers required namespaces & creates application node if missing.
-
-  Returns tuple of:
-    doc: Root xml document.
-    manifest_node: the <manifest> node.
-    app_node: the <application> node.
-  """
-  _RegisterElementTreeNamespaces()
-  doc = ElementTree.parse(path)
-  # ElementTree.find does not work if the required tag is the root.
-  if doc.getroot().tag == 'manifest':
-    manifest_node = doc.getroot()
-  else:
-    manifest_node = doc.find('manifest')
-
-  app_node = doc.find('application')
-  if app_node is None:
-    app_node = ElementTree.SubElement(manifest_node, 'application')
-
-  return doc, manifest_node, app_node

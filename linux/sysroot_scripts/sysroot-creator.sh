@@ -92,6 +92,19 @@ Usage() {
 }
 
 
+DownloadOrCopyNonUniqueFilename() {
+  # Use this function instead of DownloadOrCopy when the url uniquely
+  # identifies the file, but the filename (excluding the directory)
+  # does not.
+  local url="$1"
+  local dest="$2"
+
+  local hash="$(echo "$url" | sha256sum | cut -d' ' -f1)"
+
+  DownloadOrCopy "${url}" "${dest}.${hash}"
+  cp "${dest}.${hash}" "$dest"
+}
+
 DownloadOrCopy() {
   if [ -f "$2" ] ; then
     echo "$2 already in place"
@@ -116,27 +129,30 @@ DownloadOrCopy() {
 
 
 SetEnvironmentVariables() {
-  ARCH=""
-  echo $1 | grep -qs Amd64$ && ARCH=AMD64
-  if [ -z "$ARCH" ]; then
-    echo $1 | grep -qs I386$ && ARCH=I386
-  fi
-  if [ -z "$ARCH" ]; then
-    echo $1 | grep -qs Mips64el$ && ARCH=MIPS64EL
-  fi
-  if [ -z "$ARCH" ]; then
-    echo $1 | grep -qs Mips$ && ARCH=MIPS
-  fi
-  if [ -z "$ARCH" ]; then
-    echo $1 | grep -qs ARM$ && ARCH=ARM
-  fi
-  if [ -z "$ARCH" ]; then
-    echo $1 | grep -qs ARM64$ && ARCH=ARM64
-  fi
-  if [ -z "${ARCH}" ]; then
-    echo "ERROR: Unable to determine architecture based on: $1"
-    exit 1
-  fi
+  case $1 in
+    *Amd64)
+      ARCH=AMD64
+      ;;
+    *I386)
+      ARCH=I386
+      ;;
+    *Mips64el)
+      ARCH=MIPS64EL
+      ;;
+    *Mips)
+      ARCH=MIPS
+      ;;
+    *ARM)
+      ARCH=ARM
+      ;;
+    *ARM64)
+      ARCH=ARM64
+      ;;
+    *)
+      echo "ERROR: Unable to determine architecture based on: $1"
+      exit 1
+      ;;
+  esac
   ARCH_LOWER=$(echo $ARCH | tr '[:upper:]' '[:lower:]')
 }
 
@@ -208,7 +224,7 @@ GeneratePackageListDist() {
   local package_file_arch="${repo_name}/binary-${arch}/Packages.${PACKAGES_EXT}"
   local package_list_arch="${repo_basedir}/${package_file_arch}"
 
-  DownloadOrCopy "${package_list_arch}" "${package_list}"
+  DownloadOrCopyNonUniqueFilename "${package_list_arch}" "${package_list}"
   VerifyPackageListing "${package_file_arch}" "${package_list}" ${repo} ${dist}
   ExtractPackageXz "${package_list}" "${TMP_PACKAGE_LIST}" ${repo}
 }
@@ -616,7 +632,7 @@ BuildSysrootAll() {
 UploadSysroot() {
   local sha=$(sha1sum "${TARBALL}" | awk '{print $1;}')
   set -x
-  gsutil cp -a public-read "${TARBALL}" \
+  gsutil.py cp -a public-read "${TARBALL}" \
       "gs://chrome-linux-sysroot/toolchain/$sha/"
   set +x
 }
@@ -728,8 +744,8 @@ VerifyPackageListing() {
 
   CheckForDebianGPGKeyring
 
-  DownloadOrCopy ${release_list} ${release_file}
-  DownloadOrCopy ${release_list_gpg} ${release_file_gpg}
+  DownloadOrCopyNonUniqueFilename ${release_list} ${release_file}
+  DownloadOrCopyNonUniqueFilename ${release_list_gpg} ${release_file_gpg}
   echo "Verifying: ${release_file} with ${release_file_gpg}"
   set -x
   gpgv --keyring "${KEYRING_FILE}" "${release_file_gpg}" "${release_file}"

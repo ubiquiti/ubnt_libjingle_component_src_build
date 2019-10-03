@@ -136,14 +136,14 @@ def GetVisualStudioVersion():
   """
 
   env_version = os.environ.get('GYP_MSVS_VERSION')
+  if env_version:
+    return env_version
+
   supported_versions = MSVS_VERSIONS.keys()
 
   # VS installed in depot_tools for Googlers
   if bool(int(os.environ.get('DEPOT_TOOLS_WIN_TOOLCHAIN', '1'))):
-    if env_version:
-      return env_version
-    else:
-      return supported_versions[0]
+    return supported_versions[0]
 
   # VS installed in system for external developers
   supported_versions_str = ', '.join('{} ({})'.format(v,k)
@@ -161,17 +161,6 @@ def GetVisualStudioVersion():
   if not available_versions:
     raise Exception('No supported Visual Studio can be found.'
                     ' Supported versions are: %s.' % supported_versions_str)
-
-  if env_version:
-    if env_version not in supported_versions:
-      raise Exception('Visual Studio version %s (from GYP_MSVS_VERSION)'
-                      ' is not supported. Supported versions are: %s.'
-                      % (env_version, supported_versions_str))
-    if env_version not in available_versions:
-      raise Exception('Visual Studio version %s (from GYP_MSVS_VERSION)'
-                      ' is not available.' % env_version)
-    return env_version
-
   return available_versions[0]
 
 
@@ -416,12 +405,24 @@ def _CopyDebugger(target_dir, target_cpu):
 
 def _GetDesiredVsToolchainHashes():
   """Load a list of SHA1s corresponding to the toolchains that we want installed
-  to build with."""
+  to build with.
+
+  When updating the toolchain, consider the following areas impacted by the
+  toolchain version:
+
+  * //base/win/windows_version.cc NTDDI preprocessor check
+    Triggers a compiler error if the available SDK is older than the minimum.
+  * //build/config/win/BUILD.gn NTDDI_VERSION value
+    Affects the availability of APIs in the toolchain headers.
+  * //docs/windows_build_instructions.md mentions of VS or Windows SDK.
+    Keeps the document consistent with the toolchain version.
+  """
   env_version = GetVisualStudioVersion()
   if env_version == '2017':
-    # VS 2017 Update 9 (15.9.12) with 10.0.18362.0 SDK, 10.0.17134 version of
-    # d3dcompiler_47.dll, with ARM64 libraries.
-    toolchain_hash = 'b83892920cc15ef223a1b81cc64d98e1197d3678'
+    # VS 2017 Update 9 (15.9.12) with 10.0.18362 SDK, 10.0.17763 version of
+    # Debuggers, and 10.0.17134 version of d3dcompiler_47.dll, with ARM64
+    # libraries.
+    toolchain_hash = '418b3076791776573a815eb298c8aa590307af63'
     # Third parties that do not have access to the canonical toolchain can map
     # canonical toolchain version to their own toolchain versions.
     toolchain_hash_mapping_key = 'GYP_MSVS_HASH_%s' % toolchain_hash

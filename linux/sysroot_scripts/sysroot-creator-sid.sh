@@ -160,7 +160,7 @@ DEBIAN_PACKAGES="\
   libhogweed4
   libice6
   libicu-le-hb0
-  libicu57
+  libicu63
   libicu60
   libidl-2-0
   libidn11
@@ -336,6 +336,7 @@ DEBIAN_PACKAGES="\
   libxtst6
   libxxf86vm-dev
   libxxf86vm1
+  libzstd1
   linux-libc-dev
   mesa-common-dev
   shared-mime-info

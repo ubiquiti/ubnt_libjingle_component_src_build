@@ -44,11 +44,13 @@ CROS_RUN_TEST_PATH = os.path.abspath(os.path.join(
     CHROMITE_PATH, 'bin', 'cros_run_test'))
 
 # GN target that corresponds to the cros browser sanity test.
-SANITY_TEST_TARGET = 'cros_vm_sanity_test'
+SANITY_TEST_TARGET = 'cros_browser_sanity_test'
 
 # This is a special hostname that resolves to a different DUT in the lab
 # depending on which lab machine you're on.
 LAB_DUT_HOSTNAME = 'variable_chromeos_device_hostname'
+
+TAST_DEBUG_DOC = 'https://bit.ly/2LgvIXz'
 
 
 class TestFormatError(Exception):
@@ -62,12 +64,13 @@ class RemoteTest(object):
   BASIC_SHELL_SCRIPT = [
     '#!/bin/sh',
 
-    # /home is mounted with "noexec" in the device, but some of our tools
-    # and tests use the home dir as a workspace (eg: vpython downloads
-    # python binaries to ~/.vpython-root). /tmp doesn't have this
-    # restriction, so change the location of the home dir for the
-    # duration of the test.
-    'export HOME=/tmp',
+    # /home and /tmp are mounted with "noexec" in the device, but some of our
+    # tools and tests use those dirs as a workspace (eg: vpython downloads
+    # python binaries to ~/.vpython-root and /tmp/vpython_bootstrap).
+    # /usr/local/tmp doesn't have this restriction, so change the location of
+    # the home and temp dirs for the duration of the test.
+    'export HOME=/usr/local/tmp',
+    'export TMPDIR=/usr/local/tmp',
   ]
 
   def __init__(self, args, unknown_args):
@@ -254,11 +257,6 @@ class TastTest(RemoteTest):
           'Tast tests should not have additional args. These will be '
           'ignored: %s', self._additional_args)
 
-    # VMs don't have the disk space for an unstripped version of Chrome, so only
-    # strip when running on VMs.
-    if not self._use_vm:
-      self._test_cmd.append('--nostrip')
-
     self._test_cmd += [
         '--deploy',
         '--mount',
@@ -297,12 +295,9 @@ class TastTest(RemoteTest):
           './' + os.path.relpath(self._on_device_script, self._path_to_outdir)
       ]
     else:
-      self._test_cmd += [
-          # Since we're not in a chroot, the tast bin won't automatically handle
-          # ssh auth. So point it to the ssh keys in chromite.
-          '--private-key',
-          os.path.join(CHROMITE_PATH, 'ssh_keys', 'testing_rsa'),
-      ]
+      # Mounting the browser gives it enough disk space to not need stripping,
+      # but only for browsers not instrumented with code coverage.
+      self._test_cmd.append('--nostrip')
       # Capture tast's results in the logs dir as well.
       if self._logs_dir:
         self._test_cmd += [
@@ -356,6 +351,9 @@ class TastTest(RemoteTest):
         # https://godoc.org/chromium.googlesource.com/chromiumos/platform/tast.git/src/chromiumos/tast/testing#Error
         for err in errors:
           error_log += str(err['stack']) + '\n'
+      error_log += (
+           "\nIf you're unsure why this test failed, consult the steps "
+           'outlined in\n%s\n' % TAST_DEBUG_DOC)
       base_result = base_test_result.BaseTestResult(
           test['name'], result, duration=duration_ms, log=error_log)
       suite_results.AddResult(base_result)
@@ -451,15 +449,8 @@ class GTestTest(RemoteTest):
               vpython_spec_path),
       ])
 
-    # Load vivid before running capture_unittests
-    # TODO(crbug.com/904730): Once we start loading vivid in init service,
-    # we can remove this code.
-    if self._test_exe == 'capture_unittests':
-      device_test_script_contents.append(
-          'echo "test0000" | sudo -S modprobe vivid n_devs=1 node_types=0x1')
-
     test_invocation = (
-        './%s --test-launcher-shard-index=%d '
+        'LD_LIBRARY_PATH=./ ./%s --test-launcher-shard-index=%d '
         '--test-launcher-total-shards=%d' % (
             self._test_exe, self._test_launcher_shard_index,
             self._test_launcher_total_shards)
@@ -564,9 +555,9 @@ class BrowserSanityTest(RemoteTest):
               '--gtest_repeat')]
 
     if self._additional_args:
-      raise TestFormatError(
-          'Sanity test should not have additional args: %s' % (
-              self._additional_args))
+      logging.error(
+          'Sanity test should not have additional args: These will be '
+          'ignored: %s', self._additional_args)
 
     # VMs don't have the disk space for an unstripped version of Chrome
     # instrumented for code coverage, so only strip in that case.
@@ -650,11 +641,19 @@ def host_cmd(args, unknown_args):
   if args.verbose:
     cros_run_test_cmd.append('--debug')
 
+  if args.logs_dir:
+    cros_run_test_cmd += [
+        '--results-src', '/var/log/',
+        '--results-dest-dir', args.logs_dir,
+    ]
+
   test_env = setup_env()
   if args.deploy_chrome:
     cros_run_test_cmd += [
         '--deploy',
+        # Mounting the browser gives it enough disk space to not need stripping.
         '--mount',
+        '--nostrip',
         '--build-dir', os.path.abspath(args.path_to_outdir),
     ]
 
