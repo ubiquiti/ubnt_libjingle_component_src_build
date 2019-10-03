@@ -25,7 +25,6 @@ cc/input/event_listener_properties.h
 cc/input/scrollbar.h
 cc/input/scroller_size_metrics.h
 cc/layers/performance_properties.h
-cc/layers/scrollbar_theme_painter.h
 cc/output/bsp_compare_result.h
 cc/resources/release_callback_impl.h
 cc/resources/return_callback.h
@@ -115,7 +114,6 @@ components/viz/viz_export.h
 components/wifi/wifi_export.h
 components/wifi/wifi_service.h
 content/browser/background_fetch/background_fetch_constants.h
-content/browser/service_worker/service_worker_response_type.h
 content/common/mac/attributed_string_coder.h
 content/public/browser/context_factory.h
 content/public/browser/media_observer.h

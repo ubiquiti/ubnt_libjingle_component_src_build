@@ -34,10 +34,6 @@ DIR_SOURCE_ROOT = os.environ.get('CHECKOUT_SOURCE_ROOT',
     os.path.abspath(os.path.join(os.path.dirname(__file__),
                                  os.pardir, os.pardir, os.pardir, os.pardir)))
 
-HERMETIC_TIMESTAMP = (2001, 1, 1, 0, 0, 0)
-_HERMETIC_FILE_ATTR = (0o644 << 16)
-
-
 try:
   string_types = basestring
 except NameError:
@@ -74,7 +70,7 @@ def Touch(path, fail_if_missing=False):
     os.utime(path, None)
 
 
-def FindInDirectory(directory, filename_filter):
+def FindInDirectory(directory, filename_filter='*'):
   files = []
   for root, _dirnames, filenames in os.walk(directory):
     matched_files = fnmatch.filter(filenames, filename_filter)
@@ -314,13 +310,24 @@ def ExtractAll(zip_path, path=None, no_clobber=True, pattern=None,
   return extracted
 
 
-def AddToZipHermetic(zip_file, zip_path, src_path=None, data=None,
+def HermeticZipInfo(*args, **kwargs):
+  """Creates a ZipInfo with a constant timestamp and external_attr."""
+  ret = zipfile.ZipInfo(*args, **kwargs)
+  ret.date_time = (2001, 1, 1, 0, 0, 0)
+  ret.external_attr = (0o644 << 16)
+  return ret
+
+
+def AddToZipHermetic(zip_file,
+                     zip_path,
+                     src_path=None,
+                     data=None,
                      compress=None):
   """Adds a file to the given ZipFile with a hard-coded modified time.
 
   Args:
     zip_file: ZipFile instance to add the file to.
-    zip_path: Destination path within the zip file.
+    zip_path: Destination path within the zip file (or ZipInfo instance).
     src_path: Path of the source file. Mutually exclusive with |data|.
     data: File data as a string.
     compress: Whether to enable compression. Default is taken from ZipFile
@@ -328,9 +335,13 @@ def AddToZipHermetic(zip_file, zip_path, src_path=None, data=None,
   """
   assert (src_path is None) != (data is None), (
       '|src_path| and |data| are mutually exclusive.')
+  if isinstance(zip_path, zipfile.ZipInfo):
+    zipinfo = zip_path
+    zip_path = zipinfo.filename
+  else:
+    zipinfo = HermeticZipInfo(filename=zip_path)
+
   _CheckZipPath(zip_path)
-  zipinfo = zipfile.ZipInfo(filename=zip_path, date_time=HERMETIC_TIMESTAMP)
-  zipinfo.external_attr = _HERMETIC_FILE_ATTR
 
   if src_path and os.path.islink(src_path):
     zipinfo.filename = zip_path
@@ -566,7 +577,9 @@ def ExpandFileArgs(args):
     @FileArg(filename:key1:key2:...:keyn)
 
   The value of such a placeholder is calculated by reading 'filename' as json.
-  And then extracting the value at [key1][key2]...[keyn].
+  And then extracting the value at [key1][key2]...[keyn]. If a key has a '[]'
+  suffix the (intermediate) value will be interpreted as a single item list and
+  the single item will be returned or used for further traversal.
 
   Note: This intentionally does not return the list of files that appear in such
   placeholders. An action that uses file-args *must* know the paths of those
@@ -581,15 +594,25 @@ def ExpandFileArgs(args):
     if not match:
       continue
 
+    def get_key(key):
+      if key.endswith('[]'):
+        return key[:-2], True
+      return key, False
+
     lookup_path = match.group(1).split(':')
-    file_path = lookup_path[0]
+    file_path, _ = get_key(lookup_path[0])
     if not file_path in file_jsons:
       with open(file_path) as f:
         file_jsons[file_path] = json.load(f)
 
-    expansion = file_jsons[file_path]
-    for k in lookup_path[1:]:
+    expansion = file_jsons
+    for k in lookup_path:
+      k, flatten = get_key(k)
       expansion = expansion[k]
+      if flatten:
+        if not isinstance(expansion, list) or not len(expansion) == 1:
+          raise Exception('Expected single item list but got %s' % expansion)
+        expansion = expansion[0]
 
     # This should match ParseGnList. The output is either a GN-formatted list
     # or a literal (with no quotes).

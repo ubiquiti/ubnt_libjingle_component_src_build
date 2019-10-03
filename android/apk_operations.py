@@ -18,7 +18,6 @@ import posixpath
 import random
 import re
 import shlex
-import shutil
 import sys
 import tempfile
 import textwrap
@@ -129,8 +128,6 @@ def _GenerateBundleApks(info,
 
 def _InstallBundle(devices, bundle_apks, package_name, command_line_flags_file,
                    modules, fake_modules):
-  # Path to push fake modules for Chrome to pick up.
-  MODULES_SRC_DIRECTORY_PATH = '/data/local/tmp/modules'
   # Path Chrome creates after validating fake modules. This needs to be cleared
   # for pushed fake modules to be picked up.
   SPLITCOMPAT_PATH = '/data/data/' + package_name + '/files/splitcompat'
@@ -151,98 +148,24 @@ def _InstallBundle(devices, bundle_apks, package_name, command_line_flags_file,
     else:
       logging.info('Skipped removing nonexistent %s', SPLITCOMPAT_PATH)
 
-  def InstallFakeModules(device):
-    try:
-      temp_path = tempfile.mkdtemp()
-
-      if not fake_modules:
-        # Push empty temp_path to clear folder on device and update the cache.
-        device.PushChangedFiles([(temp_path, MODULES_SRC_DIRECTORY_PATH)],
-                                delete_device_stale=True)
-        return
-
-      # Device-spec JSON is needed, so create that first.
-      device_spec_filename = os.path.join(temp_path, 'device_spec.json')
-      get_device_spec_cmd_args = [
-          'get-device-spec', '--adb=' + adb_wrapper.AdbWrapper.GetAdbPath(),
-          '--device-id=' + device.serial, '--output=' + device_spec_filename
-      ]
-      bundletool.RunBundleTool(get_device_spec_cmd_args)
-
-      # Extract fake modules to temp directory. For now, installation
-      # requires running 'bundletool extract-apks'. Unfortunately, this leads
-      # to unneeded compression of module files.
-      extract_apks_cmd_args = [
-          'extract-apks', '--apks=' + bundle_apks,
-          '--device-spec=' + device_spec_filename,
-          '--modules=' + ','.join(fake_modules), '--output-dir=' + temp_path
-      ]
-      bundletool.RunBundleTool(extract_apks_cmd_args)
-
-      # Push fake modules, with renames.
-      fake_module_apks = set()
-      for fake_module in fake_modules:
-        found_master = False
-
-        for filename in os.listdir(temp_path):
-          # If file matches expected format, rename it to follow conventions
-          # required by splitcompatting.
-          match = re.match(r'%s-([a-z_0-9]+)\.apk' % fake_module, filename)
-          local_path = os.path.join(temp_path, filename)
-
-          if not match:
-            continue
-
-          module_suffix = match.group(1)
-          remote = os.path.join(
-              temp_path, '%s.config.%s.apk' % (fake_module, module_suffix))
-          # Check if filename matches a master apk.
-          if 'master' in module_suffix:
-            if found_master:
-              raise Exception('Expect 1 master apk file for %s' % fake_module)
-            found_master = True
-            remote = os.path.join(temp_path, '%s.apk' % fake_module)
-
-          os.rename(local_path, remote)
-          fake_module_apks.add(os.path.basename(remote))
-
-      # Files that weren't renamed should not be pushed, remove from temp_path.
-      for filename in os.listdir(temp_path):
-        if filename not in fake_module_apks:
-          os.remove(os.path.join(temp_path, filename))
-
-      device.PushChangedFiles([(temp_path, MODULES_SRC_DIRECTORY_PATH)],
-                              delete_device_stale=True)
-
-    finally:
-      shutil.rmtree(temp_path, ignore_errors=True)
-
   def Install(device):
     ClearFakeModules(device)
-    if fake_modules:
+    if fake_modules and ShouldWarnFakeFeatureModuleInstallFlag(device):
       # Print warning if command line is not set up for fake modules.
-      if ShouldWarnFakeFeatureModuleInstallFlag(device):
-        msg = ('Command line has no %s: Fake modules will be ignored.' %
-               FAKE_FEATURE_MODULE_INSTALL)
-        print(_Colorize(msg, colorama.Fore.YELLOW + colorama.Style.BRIGHT))
+      msg = ('Command line has no %s: Fake modules will be ignored.' %
+             FAKE_FEATURE_MODULE_INSTALL)
+      print(_Colorize(msg, colorama.Fore.YELLOW + colorama.Style.BRIGHT))
 
-    InstallFakeModules(device)
-
-    # NOTE: For now, installation requires running 'bundletool install-apks'.
-    # TODO(digit): Add proper support for bundles to devil instead, then use it.
-    install_cmd_args = [
-        'install-apks', '--apks=' + bundle_apks,
-        '--adb=' + adb_wrapper.AdbWrapper.GetAdbPath(),
-        '--device-id=' + device.serial
-    ]
-    if modules:
-      install_cmd_args += ['--modules=' + ','.join(modules)]
-    bundletool.RunBundleTool(install_cmd_args)
+    device.Install(
+        bundle_apks,
+        modules=modules,
+        fake_modules=fake_modules,
+        allow_downgrade=True)
 
   # Basic checks for |modules| and |fake_modules|.
   # * |fake_modules| cannot include 'base'.
   # * If |fake_modules| is given, ensure |modules| includes 'base'.
-  # * They must be disjoint.
+  # * They must be disjoint (checked by device.Install).
   modules_set = set(modules) if modules else set()
   fake_modules_set = set(fake_modules) if fake_modules else set()
   if BASE_MODULE in fake_modules_set:
@@ -250,8 +173,6 @@ def _InstallBundle(devices, bundle_apks, package_name, command_line_flags_file,
   if fake_modules_set and BASE_MODULE not in modules_set:
     raise Exception(
         '\'-f FAKE\' must be accompanied by \'-m {}\''.format(BASE_MODULE))
-  if fake_modules_set.intersection(modules_set):
-    raise Exception('\'-m\' and \'-f\' entries must be disjoint.')
 
   logging.info('Installing bundle.')
   device_utils.DeviceUtils.parallel(devices).pMap(Install)
@@ -692,24 +613,26 @@ class _LogcatProcessor(object):
 
   def _ParseLine(self, line):
     tokens = line.split(None, 6)
-    date = tokens[0]
-    invokation_time = tokens[1]
-    pid = int(tokens[2])
-    tid = int(tokens[3])
-    priority = tokens[4]
-    tag = tokens[5]
-    if len(tokens) > 6:
-      original_message = tokens[6]
-    else:  # Empty log message
-      original_message = ''
+
+    def consume_token_or_default(default):
+      return tokens.pop(0) if len(tokens) > 0 else default
+
+    date = consume_token_or_default('')
+    invokation_time = consume_token_or_default('')
+    pid = int(consume_token_or_default(-1))
+    tid = int(consume_token_or_default(-1))
+    priority = consume_token_or_default('')
+    tag = consume_token_or_default('')
+    original_message = consume_token_or_default('')
+
     # Example:
     #   09-19 06:35:51.113  9060  9154 W GCoreFlp: No location...
     #   09-19 06:01:26.174  9060 10617 I Auth    : [ReflectiveChannelBinder]...
     # Parsing "GCoreFlp:" vs "Auth    :", we only want tag to contain the word,
     # and we don't want to keep the colon for the message.
-    if tag[-1] == ':':
+    if tag and tag[-1] == ':':
       tag = tag[:-1]
-    else:
+    elif len(original_message) > 2:
       original_message = original_message[2:]
     return self.ParsedLine(
         date, invokation_time, pid, tid, priority, tag, original_message)
@@ -779,7 +702,11 @@ def _RunLogcat(device, package_name, mapping_path, verbose):
       try:
         logcat_processor.ProcessLine(line, fast)
       except:
-        sys.stderr.write('Failed to process line: ' + line)
+        sys.stderr.write('Failed to process line: ' + line + '\n')
+        # Skip stack trace for the common case of the adb server being
+        # restarted.
+        if 'unexpected EOF' in line:
+          sys.exit(1)
         raise
       if fast and nonce in line:
         fast = False
@@ -1523,8 +1450,7 @@ class _BuildBundleApks(_Command):
         help='Build .apks archive that targets the bundle\'s minSdkVersion and '
         'contains only english splits. It still contains optional splits.')
     group.add_argument(
-        '--sdk-version',
-        help='Implies --minimal. The sdkVersion to build the .apks for.')
+        '--sdk-version', help='The sdkVersion to build the .apks for.')
     group.add_argument(
         '--build-mode',
         choices=app_bundle_utils.BUILD_APKS_MODES,
@@ -1538,7 +1464,7 @@ class _BuildBundleApks(_Command):
     _GenerateBundleApks(
         self.bundle_generation_info,
         self.args.output_apks,
-        minimal=self.args.sdk_version is not None or self.args.minimal,
+        minimal=self.args.minimal,
         minimal_sdk_version=self.args.sdk_version,
         mode=self.args.build_mode)
 

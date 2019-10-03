@@ -79,6 +79,9 @@ EXTRA_TRACE_FILE = ('org.chromium.base.test.BaseJUnit4ClassRunner.TraceFile')
 _EXTRA_TEST_LIST = (
     'org.chromium.base.test.BaseChromiumAndroidJUnitRunner.TestList')
 
+_EXTRA_PACKAGE_UNDER_TEST = ('org.chromium.chrome.test.pagecontroller.rules.'
+                             'ChromeUiApplicationTestRule.PackageUnderTest')
+
 FEATURE_ANNOTATION = 'Feature'
 RENDER_TEST_FEATURE_ANNOTATION = 'RenderTest'
 
@@ -187,17 +190,20 @@ class LocalDeviceInstrumentationTestRun(
 
         steps.append(use_webview_provider)
 
-      def install_helper(apk, permissions):
+      def install_helper(apk, modules=None, permissions=None):
+
         @instrumentation_tracing.no_tracing
-        @trace_event.traced("apk_path")
-        def install_helper_internal(d, apk_path=apk.path):
+        @trace_event.traced
+        def install_helper_internal(d, apk_path=None):
           # pylint: disable=unused-argument
-          d.Install(apk, permissions=permissions)
+          d.Install(apk, modules=modules, permissions=permissions)
+
         return install_helper_internal
 
       def incremental_install_helper(apk, json_path, permissions):
-        @trace_event.traced("apk_path")
-        def incremental_install_helper_internal(d, apk_path=apk.path):
+
+        @trace_event.traced
+        def incremental_install_helper_internal(d, apk_path=None):
           # pylint: disable=unused-argument
           installer.Install(d, json_path, apk=apk, permissions=permissions)
         return incremental_install_helper_internal
@@ -211,8 +217,9 @@ class LocalDeviceInstrumentationTestRun(
                                apk_under_test_incremental_install_json,
                            permissions))
         else:
-          steps.append(install_helper(self._test_instance.apk_under_test,
-                                      permissions))
+          steps.append(
+              install_helper(self._test_instance.apk_under_test,
+                             self._test_instance.modules, permissions))
 
       permissions = self._test_instance.test_apk.GetPermissions()
       if self._test_instance.test_apk_incremental_install_json:
@@ -222,11 +229,12 @@ class LocalDeviceInstrumentationTestRun(
                              test_apk_incremental_install_json,
                          permissions))
       else:
-        steps.append(install_helper(self._test_instance.test_apk,
-                                    permissions))
+        steps.append(
+            install_helper(
+                self._test_instance.test_apk, permissions=permissions))
 
-      steps.extend(install_helper(apk, None)
-                   for apk in self._test_instance.additional_apks)
+      steps.extend(
+          install_helper(apk) for apk in self._test_instance.additional_apks)
 
       @trace_event.traced
       def set_debug_app(dev):
@@ -395,9 +403,8 @@ class LocalDeviceInstrumentationTestRun(
         if self._test_instance.package_info:
           cmdline_file = self._test_instance.package_info.cmdline_file
         else:
-          logging.warning(
-              'No PackageInfo found, falling back to using flag file %s',
-              cmdline_file)
+          raise Exception('No PackageInfo found but'
+                          '--use-apk-under-test-flags-file is specified.')
       self._flag_changers[str(device)] = flag_changer.FlagChanger(
           device, cmdline_file)
 
@@ -424,6 +431,11 @@ class LocalDeviceInstrumentationTestRun(
   #override
   def _RunTest(self, device, test):
     extras = {}
+
+    # Provide package name under test for apk_under_test.
+    if self._test_instance.apk_under_test:
+      package_name = self._test_instance.apk_under_test.GetPackageName()
+      extras[_EXTRA_PACKAGE_UNDER_TEST] = package_name
 
     flags_to_add = []
     test_timeout_scale = None
@@ -582,7 +594,7 @@ class LocalDeviceInstrumentationTestRun(
       def handle_coverage_data():
         if self._test_instance.coverage_directory:
           try:
-            device.PullFile(coverage_directory,
+            device.PullFile(coverage_device_file,
                             self._test_instance.coverage_directory)
             device.RunShellCommand(
                 'rm -f %s' % posixpath.join(coverage_directory, '*'),
