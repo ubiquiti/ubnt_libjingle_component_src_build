@@ -47,11 +47,7 @@ char kTSanDefaultSuppressions[] =
     // http://crbug.com/246968
     "race:webrtc::VideoCodingModuleImpl::RegisterPacketRequestCallback\n"
 
-    // http://crbug.com/257396
-    "race:base::trace_event::"
-
     // http://crbug.com/258479
-    "race:SamplingStateScope\n"
     "race:g_trace_state\n"
 
     // http://crbug.com/268924
@@ -137,6 +133,11 @@ char kTSanDefaultSuppressions[] =
 
     // https://crbug.com/977085
     "race:vp3_update_thread_context\n"
+
+    // Benign data race in libjpeg-turbo, won't fix
+    // (https://github.com/libjpeg-turbo/libjpeg-turbo/issues/87).
+    // https://crbug.com/1056011
+    "race:third_party/libjpeg_turbo/simd/x86_64/jsimd.c\n"
 
     // End of suppressions.
     ;  // Please keep this semicolon.
