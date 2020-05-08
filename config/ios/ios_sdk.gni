@@ -87,23 +87,30 @@ if (additional_target_cpus != []) {
   }
 }
 
-# https://github.com/rust-lang/rust/issues/48862
-ios_min_version_switch_name = "-m" + ios_device_name
-if (use_ios_simulator) {
-  ios_min_version_switch_name += "simulator"
-} else {
-  ios_min_version_switch_name += "os"
+if(ios_device_name != "macosx" ) {
+  # https://github.com/rust-lang/rust/issues/48862
+  ios_min_version_switch_name = "-m" + ios_device_name
+  if (use_ios_simulator) {
+    ios_min_version_switch_name += "simulator"
+  } else {
+    ios_min_version_switch_name += "os"
+  }
+  ios_min_version_switch_name += "-version-min"
 }
-ios_min_version_switch_name += "-version-min"
 
 if (ios_sdk_path == "") {
   # Compute default target.
-  if (use_ios_simulator) {
-    ios_sdk_name = ios_device_name + "simulator"
-    ios_sdk_platform = ios_device_name + "Simulator"
+  if(ios_device_name != "macosx" ) {
+    if (use_ios_simulator) {
+      ios_sdk_name = ios_device_name + "simulator"
+      ios_sdk_platform = ios_device_name + "Simulator"
+    } else {
+      ios_sdk_name = ios_device_name + "os"
+      ios_sdk_platform = ios_device_name + "OS"
+    }
   } else {
-    ios_sdk_name = ios_device_name + "os"
-    ios_sdk_platform = ios_device_name + "OS"
+    ios_sdk_name = "macosx"
+    ios_sdk_platform = "__aloha__"
   }
 
   ios_sdk_info_args = [ "--get_sdk_info" ]
