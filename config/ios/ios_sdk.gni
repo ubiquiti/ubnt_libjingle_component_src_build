@@ -110,7 +110,7 @@ if (ios_sdk_path == "") {
     }
   } else {
     ios_sdk_name = "macosx"
-    ios_sdk_platform = "__aloha__"
+    ios_sdk_platform = "MacOSX"
   }
 
   ios_sdk_info_args = [ "--get_sdk_info" ]
