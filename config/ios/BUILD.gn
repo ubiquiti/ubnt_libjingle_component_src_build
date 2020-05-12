@@ -92,7 +92,8 @@ config("runtime_library") {
     common_flags += [ "-fembed-bitcode" ]
     common_flags += [ "-iframework", "$sysroot/System/iOSSupport/System/Library/Frameworks" ]
     common_flags += [ "-isystem", "$sysroot/System/iOSSupport/usr/include" ]
-    common_flags += [ "-arch", "x86_64h" ]
+    # COME BACK HERE!!!
+    # common_flags += [ "-arch", "x86_64h" ]
   } else {
     common_flags += [ "$ios_min_version_switch_name=$ios_deployment_target" ]
   }
