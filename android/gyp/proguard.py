@@ -9,8 +9,10 @@ import os
 import re
 import shutil
 import sys
+import tempfile
 import zipfile
 
+import dex_jdk_libs
 from util import build_utils
 from util import diff_utils
 
@@ -106,13 +108,18 @@ def _ParseOptions():
   args = build_utils.ExpandFileArgs(sys.argv[1:])
   parser = argparse.ArgumentParser()
   build_utils.AddDepfileOption(parser)
-  group = parser.add_mutually_exclusive_group(required=True)
-  group.add_argument('--proguard-path', help='Path to the proguard.jar to use.')
-  group.add_argument('--r8-path', help='Path to the R8.jar to use.')
+  parser.add_argument('--r8-path',
+                      required=True,
+                      help='Path to the R8.jar to use.')
   parser.add_argument(
-      '--input-paths', required=True, help='GN-list of .jar files to optimize.')
-  parser.add_argument(
-      '--output-path', required=True, help='Path to the generated .jar file.')
+      '--desugar-jdk-libs-json', help='Path to desugar_jdk_libs.json.')
+  parser.add_argument('--input-paths',
+                      action='append',
+                      required=True,
+                      help='GN-list of .jar files to optimize.')
+  parser.add_argument('--desugar-jdk-libs-jar',
+                      help='Path to desugar_jdk_libs.jar.')
+  parser.add_argument('--output-path', help='Path to the generated .jar file.')
   parser.add_argument(
       '--proguard-configs',
       action='append',
@@ -137,6 +144,16 @@ def _ParseOptions():
       '--proguard-expectations-failure-file',
       help='Path to file written to if the expected merged ProGuard configs '
       'differ from the generated merged ProGuard configs.')
+  parser.add_argument(
+      '--fail-on-expectations',
+      action="store_true",
+      help='When passed fails the build on proguard config expectation '
+      'mismatches.')
+  parser.add_argument(
+      '--only-verify-expectations',
+      action='store_true',
+      help='If passed only verifies that the proguard configs match '
+      'expectations but does not do any optimization with proguard/R8.')
   parser.add_argument(
       '--classpath',
       action='append',
@@ -165,8 +182,35 @@ def _ParseOptions():
       '--force-enable-assertions',
       action='store_true',
       help='Forcefully enable javac generated assertion code.')
+  parser.add_argument(
+      '--feature-jars',
+      action='append',
+      help='GN list of path to jars which comprise the corresponding feature.')
+  parser.add_argument(
+      '--dex-dest',
+      action='append',
+      dest='dex_dests',
+      help='Destination for dex file of the corresponding feature.')
+  parser.add_argument(
+      '--feature-name',
+      action='append',
+      dest='feature_names',
+      help='The name of the feature module.')
+  parser.add_argument(
+      '--stamp',
+      help='File to touch upon success. Mutually exclusive with --output-path')
+  parser.add_argument('--desugared-library-keep-rule-output',
+                      help='Path to desugared library keep rule output file.')
 
   options = parser.parse_args(args)
+
+  if options.feature_names:
+    if options.output_path:
+      parser.error('Feature splits cannot specify an output in GN.')
+    if not options.stamp:
+      parser.error('Feature splits require a stamp file as output.')
+  elif not options.output_path:
+    parser.error('Output path required when feature splits aren\'t used')
 
   if options.main_dex_rules_path and not options.r8_path:
     parser.error('R8 must be enabled to pass main dex rules.')
@@ -174,8 +218,8 @@ def _ParseOptions():
   if options.expected_configs_file and not options.output_config:
     parser.error('--expected-configs-file requires --output-config')
 
-  if options.proguard_path and options.disable_outlining:
-    parser.error('--disable-outlining requires --r8-path')
+  if options.only_verify_expectations and not options.stamp:
+    parser.error('--only-verify-expectations requires --stamp')
 
   options.classpath = build_utils.ParseGnList(options.classpath)
   options.proguard_configs = build_utils.ParseGnList(options.proguard_configs)
@@ -183,10 +227,22 @@ def _ParseOptions():
   options.extra_mapping_output_paths = build_utils.ParseGnList(
       options.extra_mapping_output_paths)
 
+  if options.feature_names:
+    if 'base' not in options.feature_names:
+      parser.error('"base" feature required when feature arguments are used.')
+    if len(options.feature_names) != len(options.feature_jars) or len(
+        options.feature_names) != len(options.dex_dests):
+      parser.error('Invalid feature argument lengths.')
+
+    options.feature_jars = [
+        build_utils.ParseGnList(x) for x in options.feature_jars
+    ]
+
   return options
 
 
-def _VerifyExpectedConfigs(expected_path, actual_path, failure_file_path):
+def _VerifyExpectedConfigs(expected_path, actual_path, failure_file_path,
+                           fail_on_mismatch):
   msg = diff_utils.DiffFileContents(expected_path, actual_path)
   if not msg:
     return
@@ -202,6 +258,41 @@ https://chromium.googlesource.com/chromium/src/+/HEAD/chrome/android/java/README
     with open(failure_file_path, 'w') as f:
       f.write(msg_header)
       f.write(msg)
+  if fail_on_mismatch:
+    sys.exit(1)
+
+
+class _DexPathContext(object):
+  def __init__(self, name, output_path, input_jars, work_dir):
+    self.name = name
+    self.input_paths = input_jars
+    self._final_output_path = output_path
+    self.staging_dir = os.path.join(work_dir, name)
+    os.mkdir(self.staging_dir)
+
+  def CreateOutput(self, has_imported_lib=False, keep_rule_output=None):
+    found_files = build_utils.FindInDirectory(self.staging_dir)
+    if not found_files:
+      raise Exception('Missing dex outputs in {}'.format(self.staging_dir))
+
+    if self._final_output_path.endswith('.dex'):
+      if has_imported_lib:
+        raise Exception(
+            'Trying to create a single .dex file, but a dependency requires '
+            'JDK Library Desugaring (which necessitates a second file).'
+            'Refer to %s to see what desugaring was required' %
+            keep_rule_output)
+      if len(found_files) != 1:
+        raise Exception('Expected exactly 1 dex file output, found: {}'.format(
+            '\t'.join(found_files)))
+      shutil.move(found_files[0], self._final_output_path)
+      return
+
+    # Add to .jar using Python rather than having R8 output to a .zip directly
+    # in order to disable compression of the .jar, saving ~500ms.
+    tmp_jar_output = self.staging_dir + '.jar'
+    build_utils.DoZip(found_files, tmp_jar_output, base_dir=self.staging_dir)
+    shutil.move(tmp_jar_output, self._final_output_path)
 
 
 def _OptimizeWithR8(options,
@@ -224,22 +315,39 @@ def _OptimizeWithR8(options,
     tmp_output = os.path.join(tmp_dir, 'r8out')
     os.mkdir(tmp_output)
 
+    feature_contexts = []
+    if options.feature_names:
+      for name, dest_dex, input_paths in zip(
+          options.feature_names, options.dex_dests, options.feature_jars):
+        feature_context = _DexPathContext(name, dest_dex, input_paths,
+                                          tmp_output)
+        if name == 'base':
+          base_dex_context = feature_context
+        else:
+          feature_contexts.append(feature_context)
+    else:
+      base_dex_context = _DexPathContext('base', options.output_path,
+                                         options.input_paths, tmp_output)
+
     cmd = [
         build_utils.JAVA_PATH,
-        '-jar',
+        '-cp',
         options.r8_path,
+        'com.android.tools.r8.R8',
         '--no-data-resources',
         '--output',
-        tmp_output,
+        base_dex_context.staging_dir,
         '--pg-map-output',
         tmp_mapping_path,
     ]
 
-    for lib in libraries:
-      cmd += ['--lib', lib]
-
-    for config_file in config_paths:
-      cmd += ['--pg-conf', config_file]
+    if options.desugar_jdk_libs_json:
+      cmd += [
+          '--desugared-lib',
+          options.desugar_jdk_libs_json,
+          '--desugared-lib-pg-conf-output',
+          options.desugared_library_keep_rule_output,
+      ]
 
     if options.min_api:
       cmd += ['--min-api', options.min_api]
@@ -247,11 +355,29 @@ def _OptimizeWithR8(options,
     if options.force_enable_assertions:
       cmd += ['--force-enable-assertions']
 
+    for lib in libraries:
+      cmd += ['--lib', lib]
+
+    for config_file in config_paths:
+      cmd += ['--pg-conf', config_file]
+
     if options.main_dex_rules_path:
       for main_dex_rule in options.main_dex_rules_path:
         cmd += ['--main-dex-rules', main_dex_rule]
 
-    cmd += options.input_paths
+    module_input_jars = set(base_dex_context.input_paths)
+    for feature in feature_contexts:
+      feature_input_jars = [
+          p for p in feature.input_paths if p not in module_input_jars
+      ]
+      module_input_jars.update(feature_input_jars)
+      for in_jar in feature_input_jars:
+        cmd += ['--feature', in_jar, feature.staging_dir]
+
+    cmd += base_dex_context.input_paths
+    # Add any extra input jars to the base module (e.g. desugar runtime).
+    extra_jars = set(options.input_paths) - module_input_jars
+    cmd += sorted(extra_jars)
 
     env = os.environ.copy()
     stderr_filter = lambda l: re.sub(r'.*_JAVA_OPTIONS.*\n?', '', l)
@@ -268,82 +394,26 @@ def _OptimizeWithR8(options,
           'android/docs/java_optimization.md#Debugging-common-failures\n'))
       raise ProguardProcessError(err, debugging_link)
 
-    found_files = build_utils.FindInDirectory(tmp_output)
-    if not options.output_path.endswith('.dex'):
-      # Add to .jar using Python rather than having R8 output to a .zip directly
-      # in order to disable compression of the .jar, saving ~500ms.
-      tmp_jar_output = tmp_output + '.jar'
-      build_utils.DoZip(found_files, tmp_jar_output, base_dir=tmp_output)
-      shutil.move(tmp_jar_output, options.output_path)
-    else:
-      if len(found_files) > 1:
-        raise Exception('Too many files created: {}'.format(found_files))
-      shutil.move(found_files[0], options.output_path)
+    base_has_imported_lib = False
+    if options.desugar_jdk_libs_json:
+      existing_files = build_utils.FindInDirectory(base_dex_context.staging_dir)
+      base_has_imported_lib = dex_jdk_libs.DexJdkLibJar(
+          options.r8_path, options.min_api, options.desugar_jdk_libs_json,
+          options.desugar_jdk_libs_jar,
+          options.desugared_library_keep_rule_output,
+          os.path.join(base_dex_context.staging_dir,
+                       'classes%d.dex' % (len(existing_files) + 1)))
+
+    base_dex_context.CreateOutput(base_has_imported_lib,
+                                  options.desugared_library_keep_rule_output)
+    for feature in feature_contexts:
+      feature.CreateOutput()
 
     with open(options.mapping_output, 'w') as out_file, \
         open(tmp_mapping_path) as in_file:
       # Mapping files generated by R8 include comments that may break
       # some of our tooling so remove those (specifically: apkanalyzer).
       out_file.writelines(l for l in in_file if not l.startswith('#'))
-
-
-def _OptimizeWithProguard(options,
-                          config_paths,
-                          libraries,
-                          dynamic_config_data,
-                          print_stdout=False):
-  with build_utils.TempDir() as tmp_dir:
-    combined_injars_path = os.path.join(tmp_dir, 'injars.jar')
-    combined_libjars_path = os.path.join(tmp_dir, 'libjars.jar')
-    combined_proguard_configs_path = os.path.join(tmp_dir, 'includes.txt')
-    tmp_mapping_path = os.path.join(tmp_dir, 'mapping.txt')
-    tmp_output_jar = os.path.join(tmp_dir, 'output.jar')
-
-    build_utils.MergeZips(combined_injars_path, options.input_paths)
-    build_utils.MergeZips(combined_libjars_path, libraries)
-    with open(combined_proguard_configs_path, 'w') as f:
-      f.write(_CombineConfigs(config_paths, dynamic_config_data))
-
-    if options.proguard_path.endswith('.jar'):
-      cmd = [
-          build_utils.JAVA_PATH, '-jar', options.proguard_path, '-include',
-          combined_proguard_configs_path
-      ]
-    else:
-      cmd = [options.proguard_path, '@' + combined_proguard_configs_path]
-
-    cmd += [
-        '-forceprocessing',
-        '-libraryjars',
-        combined_libjars_path,
-        '-injars',
-        combined_injars_path,
-        '-outjars',
-        tmp_output_jar,
-        '-printmapping',
-        tmp_mapping_path,
-    ]
-
-    # Warning: and Error: are sent to stderr, but messages and Note: are sent
-    # to stdout.
-    stdout_filter = None
-    stderr_filter = None
-    if print_stdout:
-      stdout_filter = _ProguardOutputFilter()
-      stderr_filter = _ProguardOutputFilter()
-    build_utils.CheckOutput(
-        cmd,
-        print_stdout=True,
-        print_stderr=True,
-        stdout_filter=stdout_filter,
-        stderr_filter=stderr_filter)
-
-    # ProGuard will skip writing if the file would be empty.
-    build_utils.Touch(tmp_mapping_path)
-
-    # Copy output files to correct locations.
-    shutil.move(tmp_output_jar, options.output_path)
-    shutil.move(tmp_mapping_path, options.mapping_output)
 
 
 def _CombineConfigs(configs, dynamic_config_data, exclude_generated=False):
@@ -402,11 +472,14 @@ def _CreateDynamicConfig(options):
     if api_level > _min_api:
       ret.append('-keep @interface %s' % annotation_name)
       ret.append("""\
--keep,allowobfuscation,allowoptimization @%s class ** {
-  <methods>;
+-if @%s class * {
+    *** *(...);
+}
+-keep,allowobfuscation class <1> {
+    *** <2>(...);
 }""" % annotation_name)
       ret.append("""\
--keepclassmembers,allowobfuscation,allowoptimization class ** {
+-keepclassmembers,allowobfuscation class ** {
   @%s <methods>;
 }""" % annotation_name)
   return '\n'.join(ret)
@@ -431,6 +504,15 @@ Embedded configs are not permitted (https://crbug.com/989505)
 def _ContainsDebuggingConfig(config_str):
   debugging_configs = ('-whyareyoukeeping', '-whyareyounotinlining')
   return any(config in config_str for config in debugging_configs)
+
+
+def _MaybeWriteStampAndDepFile(options, inputs):
+  output = options.output_path
+  if options.stamp:
+    build_utils.Touch(options.stamp)
+    output = options.stamp
+  if options.depfile:
+    build_utils.WriteDepfile(options.depfile, output, inputs=inputs)
 
 
 def main():
@@ -460,6 +542,18 @@ def main():
       proguard_configs, dynamic_config_data, exclude_generated=True)
   print_stdout = _ContainsDebuggingConfig(merged_configs) or options.verbose
 
+
+  if options.expected_configs_file:
+    with tempfile.NamedTemporaryFile() as f:
+      f.write(merged_configs)
+      f.flush()
+      _VerifyExpectedConfigs(options.expected_configs_file, f.name,
+                             options.proguard_expectations_failure_file,
+                             options.fail_on_expectations)
+  if options.only_verify_expectations:
+    _MaybeWriteStampAndDepFile(options, options.proguard_configs)
+    return
+
   # Writing the config output before we know ProGuard is going to succeed isn't
   # great, since then a failure will result in one of the outputs being updated.
   # We do it anyways though because the error message prints out the path to the
@@ -469,17 +563,8 @@ def main():
     with open(options.output_config, 'w') as f:
       f.write(merged_configs)
 
-    if options.expected_configs_file:
-      _VerifyExpectedConfigs(options.expected_configs_file,
-                             options.output_config,
-                             options.proguard_expectations_failure_file)
-
-  if options.r8_path:
-    _OptimizeWithR8(options, proguard_configs, libraries, dynamic_config_data,
-                    print_stdout)
-  else:
-    _OptimizeWithProguard(options, proguard_configs, libraries,
-                          dynamic_config_data, print_stdout)
+  _OptimizeWithR8(options, proguard_configs, libraries, dynamic_config_data,
+                  print_stdout)
 
   # After ProGuard / R8 has run:
   for output in options.extra_mapping_output_paths:
@@ -489,8 +574,7 @@ def main():
   if options.apply_mapping:
     inputs.append(options.apply_mapping)
 
-  build_utils.WriteDepfile(
-      options.depfile, options.output_path, inputs=inputs, add_pydeps=False)
+  _MaybeWriteStampAndDepFile(options, inputs)
 
 
 if __name__ == '__main__':

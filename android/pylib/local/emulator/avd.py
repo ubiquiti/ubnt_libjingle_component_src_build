@@ -265,11 +265,16 @@ class AvdConfig(object):
       instance = _AvdInstance(self._emulator_path, self._emulator_home,
                               self._config)
       # Enable debug for snapshot when it is set to True
-      debug_tags = 'snapshot' if snapshot else None
+      debug_tags = 'init,snapshot' if snapshot else None
       instance.Start(
           read_only=False, snapshot_save=snapshot, debug_tags=debug_tags)
+      # Android devices with full-disk encryption are encrypted on first boot,
+      # and then get decrypted to continue the boot process (See details in
+      # https://bit.ly/3agmjcM).
+      # Wait for this step to complete since it can take a while for old OSs
+      # like M, otherwise the avd may have "Encryption Unsuccessful" error.
       device_utils.DeviceUtils(instance.serial).WaitUntilFullyBooted(
-          timeout=180, retries=0)
+          decrypt=True, timeout=180, retries=0)
       instance.Stop()
 
       # The multiinstance lock file seems to interfere with the emulator's
@@ -311,15 +316,20 @@ class AvdConfig(object):
             'create',
             '-pkg-def',
             package_def_path,
+            '-tag',
+            'emulator_version:%s' % self._config.emulator_package.version,
+            '-tag',
+            'system_image_version:%s' %
+            self._config.system_image_package.version,
         ]
         if cipd_json_output:
           cipd_create_cmd.extend([
               '-json-output',
               cipd_json_output,
           ])
-        if dry_run:
-          logging.info('Dry run. CIPD package creation skipped')
-        else:
+        logging.info('running %r%s', cipd_create_cmd,
+                     ' (dry_run)' if dry_run else '')
+        if not dry_run:
           try:
             for line in cmd_helper.IterCmdOutputLines(cipd_create_cmd):
               logging.info('    %s', line)
@@ -403,14 +413,14 @@ class AvdConfig(object):
     android_avd_home = os.path.join(self._emulator_home, 'avd')
     avd_dir = os.path.join(android_avd_home, '%s.avd' % self._config.avd_name)
 
-    hardware_qemu_path = os.path.join(avd_dir, 'hardware-qemu.ini')
-    if os.path.exists(hardware_qemu_path):
-      with open(hardware_qemu_path) as hardware_qemu_file:
-        hardware_qemu_contents = ini.load(hardware_qemu_file)
+    config_path = os.path.join(avd_dir, 'config.ini')
+    if os.path.exists(config_path):
+      with open(config_path) as config_file:
+        config_contents = ini.load(config_file)
     else:
-      hardware_qemu_contents = {}
+      config_contents = {}
 
-    hardware_qemu_contents['hw.sdCard'] = 'true'
+    config_contents['hw.sdCard'] = 'true'
     if self._config.avd_settings.sdcard.size:
       sdcard_path = os.path.join(avd_dir, 'cr-sdcard.img')
       if not os.path.exists(sdcard_path):
@@ -423,10 +433,10 @@ class AvdConfig(object):
         ]
         cmd_helper.RunCmd(mksdcard_cmd)
 
-      hardware_qemu_contents['hw.sdCard.path'] = sdcard_path
+      config_contents['hw.sdCard.path'] = sdcard_path
 
-    with open(hardware_qemu_path, 'w') as hardware_qemu_file:
-      ini.dump(hardware_qemu_contents, hardware_qemu_file)
+    with open(config_path, 'w') as config_file:
+      ini.dump(config_contents, config_file)
 
   def _Initialize(self):
     if self._initialized:

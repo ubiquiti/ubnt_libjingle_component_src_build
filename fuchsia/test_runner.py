@@ -10,6 +10,7 @@ import argparse
 import json
 import logging
 import os
+import runner_logs
 import socket
 import subprocess
 import sys
@@ -19,6 +20,9 @@ import time
 from common_args import AddCommonArgs, ConfigureLogging, GetDeploymentTargetForArgs
 from net_test_server import SetupTestServer
 from run_package import RunPackage, RunPackageArgs, SystemLogReader
+from runner_exceptions import HandleExceptionAndReturnExitCode
+from runner_logs import RunnerLogManager
+from symbolizer import BuildIdsPaths
 
 DEFAULT_TEST_SERVER_CONCURRENCY = 4
 
@@ -138,13 +142,14 @@ def main():
   if args.child_args:
     child_args.extend(args.child_args)
 
-  with GetDeploymentTargetForArgs(args) as target:
-    with SystemLogReader() as system_logger:
+  try:
+    with GetDeploymentTargetForArgs(args) as target, \
+         SystemLogReader() as system_logger, \
+         RunnerLogManager(args.runner_logs_dir, BuildIdsPaths(args.package)):
       target.Start()
 
-      if args.enable_fuchsia_system_log:
-        if args.system_log_file and args.system_log_file != '-':
-          system_logger.Start(target, args.package, args.system_log_file)
+      if args.system_log_file and args.system_log_file != '-':
+        system_logger.Start(target, args.package, args.system_log_file)
 
       if args.test_launcher_filter_file:
         target.PutFile(args.test_launcher_filter_file, TEST_FILTER_PATH,
@@ -170,6 +175,9 @@ def main():
                       for_package=args.package_name)
 
       return returncode
+
+  except:
+    return HandleExceptionAndReturnExitCode()
 
 
 if __name__ == '__main__':

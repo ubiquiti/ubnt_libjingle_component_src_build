@@ -64,7 +64,7 @@
 #elif defined(_AIX)
 #define OS_AIX 1
 #elif defined(__asmjs__) || defined(__wasm__)
-#define OS_ASMJS
+#define OS_ASMJS 1
 #else
 #error Please add support for your platform in build/build_config.h
 #endif
@@ -86,7 +86,8 @@
 #define OS_POSIX 1
 #endif
 
-// Compiler detection.
+// Compiler detection. Note: clang masquerades as GCC on POSIX and as MSVC on
+// Windows.
 #if defined(__GNUC__)
 #define COMPILER_GCC 1
 #elif defined(_MSC_VER)
