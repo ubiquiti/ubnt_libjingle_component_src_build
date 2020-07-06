@@ -82,6 +82,10 @@ config("compiler") {
     # Don't look for includes in %INCLUDE%.
     cflags += [ "/X" ]
 
+    # Required to make the 19041 SDK compatible with clang-cl.
+    # See https://crbug.com/1089996 issue #2 for details.
+    cflags += [ "/D__WRL_ENABLE_FUNCTION_STATICS__" ]
+
     # Tell clang which version of MSVC to emulate.
     cflags += [ "-fmsc-version=1916" ]
 
@@ -121,9 +125,6 @@ config("compiler") {
     if (use_clang_diagnostics_format) {
       cflags += [ "/clang:-fdiagnostics-format=clang" ]
     }
-
-    # Clang runtime libraries, such as the sanitizer runtimes, live here.
-    lib_dirs = [ "$clang_base_path/lib/clang/$clang_version/lib/windows" ]
   }
 
   if (use_lld && !use_thin_lto && (is_clang || !use_goma)) {
@@ -265,7 +266,7 @@ config("runtime_library") {
 # manually override this config for their compiles.
 config("winver") {
   defines = [
-    "NTDDI_VERSION=NTDDI_WIN10_RS2",
+    "NTDDI_VERSION=NTDDI_WIN10_VB",
 
     # We can't say `=_WIN32_WINNT_WIN10` here because some files do
     # `#if WINVER < 0x0600` without including windows.h before,
