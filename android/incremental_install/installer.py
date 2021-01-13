@@ -144,16 +144,13 @@ def Install(device, install_json, apk=None, enable_device_cache=False,
     enable_device_cache: Whether to enable on-device caching of checksums.
     use_concurrency: Whether to speed things up using multiple threads.
     permissions: A list of the permissions to grant, or None to grant all
-                 non-blacklisted permissions in the manifest.
+                 non-denylisted permissions in the manifest.
   """
   if isinstance(install_json, basestring):
     with open(install_json) as f:
       install_dict = json.load(f)
   else:
     install_dict = install_json
-
-  if install_dict.get('dont_even_try'):
-    raise Exception(install_dict['dont_even_try'])
 
   main_timer = time_profile.TimeProfile()
   install_timer = time_profile.TimeProfile()

@@ -5,6 +5,7 @@
 
 import logging
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -36,7 +37,8 @@ class SkiaGoldSession(object):
     """Struct-like object for storing results of an image comparison."""
 
     def __init__(self):
-      self.triage_link = None
+      self.public_triage_link = None
+      self.internal_triage_link = None
       self.triage_link_omission_reason = None
       self.local_diff_given_image = None
       self.local_diff_closest_image = None
@@ -60,7 +62,6 @@ class SkiaGoldSession(object):
     """
     self._working_dir = working_dir
     self._gold_properties = gold_properties
-    self._keys_file = keys_file
     self._corpus = corpus
     self._instance = instance
     self._triage_link_file = tempfile.NamedTemporaryFile(suffix='.txt',
@@ -71,12 +72,18 @@ class SkiaGoldSession(object):
     self._authenticated = False
     self._initialized = False
 
+    # Copy the given keys file to the working directory in case it ends up
+    # getting deleted before we try to use it.
+    self._keys_file = os.path.join(working_dir, 'gold_keys.json')
+    shutil.copy(keys_file, self._keys_file)
+
   def RunComparison(self,
                     name,
                     png_file,
                     output_manager,
                     inexact_matching_args=None,
-                    use_luci=True):
+                    use_luci=True,
+                    optional_keys=None):
     """Helper method to run all steps to compare a produced image.
 
     Handles authentication, itnitialization, comparison, and, if necessary,
@@ -95,6 +102,10 @@ class SkiaGoldSession(object):
       use_luci: If true, authentication will use the service account provided by
           the LUCI context. If false, will attempt to use whatever is set up in
           gsutil, which is only supported for local runs.
+      optional_keys: A dict containing optional key/value pairs to pass to Gold
+          for this comparison. Optional keys are keys unrelated to the
+          configuration the image was produced on, e.g. a comment or whether
+          Gold should treat the image as ignored.
 
     Returns:
       A tuple (status, error). |status| is a value from
@@ -112,7 +123,8 @@ class SkiaGoldSession(object):
     compare_rc, compare_stdout = self.Compare(
         name=name,
         png_file=png_file,
-        inexact_matching_args=inexact_matching_args)
+        inexact_matching_args=inexact_matching_args,
+        optional_keys=optional_keys)
     if not compare_rc:
       return self.StatusCodes.SUCCESS, None
 
@@ -221,10 +233,14 @@ class SkiaGoldSession(object):
       self._initialized = True
     return rc, stdout
 
-  def Compare(self, name, png_file, inexact_matching_args=None):
+  def Compare(self,
+              name,
+              png_file,
+              inexact_matching_args=None,
+              optional_keys=None):
     """Compares the given image to images known to Gold.
 
-    Triage links can later be retrieved using GetTriageLink().
+    Triage links can later be retrieved using GetTriageLinks().
 
     Args:
       name: The name of the image being compared.
@@ -232,6 +248,10 @@ class SkiaGoldSession(object):
       inexact_matching_args: A list of strings containing extra command line
           arguments to pass to Gold for inexact matching. Can be omitted to use
           exact matching.
+      optional_keys: A dict containing optional key/value pairs to pass to Gold
+          for this comparison. Optional keys are keys unrelated to the
+          configuration the image was produced on, e.g. a comment or whether
+          Gold should treat the image as ignored.
 
     Returns:
       A tuple (return_code, output). |return_code| is the return code of the
@@ -261,6 +281,13 @@ class SkiaGoldSession(object):
                    inexact_matching_args)
       compare_cmd.extend(inexact_matching_args)
 
+    optional_keys = optional_keys or {}
+    for k, v in optional_keys.iteritems():
+      compare_cmd.extend([
+          '--add-test-optional-key',
+          '%s:%s' % (k, v),
+      ])
+
     self._ClearTriageLinkFile()
     rc, stdout = self._RunCmdForRcAndOutput(compare_cmd)
 
@@ -274,12 +301,23 @@ class SkiaGoldSession(object):
           instance=self._instance,
           crs=self._gold_properties.code_review_system,
           issue=self._gold_properties.issue)
-      self._comparison_results[name].triage_link = cl_triage_link
+      self._comparison_results[name].internal_triage_link = cl_triage_link
+      self._comparison_results[name].public_triage_link =\
+          self._GeneratePublicTriageLink(cl_triage_link)
     else:
       try:
         with open(self._triage_link_file) as tlf:
           triage_link = tlf.read().strip()
-        self._comparison_results[name].triage_link = triage_link
+        if not triage_link:
+          self._comparison_results[name].triage_link_omission_reason = (
+              'Gold did not provide a triage link. This is likely a bug on '
+              "Gold's end.")
+          self._comparison_results[name].internal_triage_link = None
+          self._comparison_results[name].public_triage_link = None
+        else:
+          self._comparison_results[name].internal_triage_link = triage_link
+          self._comparison_results[name].public_triage_link =\
+              self._GeneratePublicTriageLink(triage_link)
       except IOError:
         self._comparison_results[name].triage_link_omission_reason = (
             'Failed to read triage link from file')
@@ -313,39 +351,54 @@ class SkiaGoldSession(object):
           'tests locally.')
 
     output_dir = self._CreateDiffOutputDir()
-    diff_cmd = [
-        GOLDCTL_BINARY,
-        'diff',
-        '--corpus',
-        self._corpus,
-        '--instance',
-        self._instance,
-        '--input',
-        png_file,
-        '--test',
-        name,
-        '--work-dir',
-        self._working_dir,
-        '--out-dir',
-        output_dir,
-    ]
-    rc, stdout = self._RunCmdForRcAndOutput(diff_cmd)
-    self._StoreDiffLinks(name, output_manager, output_dir)
-    return rc, stdout
+    # TODO(skbug.com/10611): Remove this temporary work dir and instead just use
+    # self._working_dir once `goldctl diff` stops clobbering the auth files in
+    # the provided work directory.
+    temp_work_dir = tempfile.mkdtemp()
+    # shutil.copytree() fails if the destination already exists, so use a
+    # subdirectory of the temporary directory.
+    temp_work_dir = os.path.join(temp_work_dir, 'diff_work_dir')
+    try:
+      shutil.copytree(self._working_dir, temp_work_dir)
+      diff_cmd = [
+          GOLDCTL_BINARY,
+          'diff',
+          '--corpus',
+          self._corpus,
+          '--instance',
+          self._GetDiffGoldInstance(),
+          '--input',
+          png_file,
+          '--test',
+          name,
+          '--work-dir',
+          temp_work_dir,
+          '--out-dir',
+          output_dir,
+      ]
+      rc, stdout = self._RunCmdForRcAndOutput(diff_cmd)
+      self._StoreDiffLinks(name, output_manager, output_dir)
+      return rc, stdout
+    finally:
+      shutil.rmtree(os.path.realpath(os.path.join(temp_work_dir, '..')))
 
-  def GetTriageLink(self, name):
-    """Gets the triage link for the given image.
+  def GetTriageLinks(self, name):
+    """Gets the triage links for the given image.
 
     Args:
       name: The name of the image to retrieve the triage link for.
 
     Returns:
-      A string containing the triage link if it is available, or None if it is
-      not available for some reason. The reason can be retrieved using
-      GetTriageLinkOmissionReason.
+      A tuple (public, internal). |public| is a string containing the triage
+      link for the public Gold instance if it is available, or None if it is not
+      available for some reason. |internal| is the same as |public|, but
+      containing a link to the internal Gold instance. The reason for links not
+      being available can be retrieved using GetTriageLinkOmissionReason.
     """
-    return self._comparison_results.get(name,
-                                        self.ComparisonResults()).triage_link
+    comparison_results = self._comparison_results.get(name,
+                                                      self.ComparisonResults())
+    return (comparison_results.public_triage_link,
+            comparison_results.internal_triage_link)
 
   def GetTriageLinkOmissionReason(self, name):
     """Gets the reason why a triage link is not available for an image.
@@ -360,7 +413,8 @@ class SkiaGoldSession(object):
       return 'No image comparison performed for %s' % name
     results = self._comparison_results[name]
     # This method should not be called if there is a valid triage link.
-    assert results.triage_link is None
+    assert results.public_triage_link is None
+    assert results.internal_triage_link is None
     if results.triage_link_omission_reason:
       return results.triage_link_omission_reason
     if results.local_diff_given_image:
@@ -408,6 +462,20 @@ class SkiaGoldSession(object):
     assert name in self._comparison_results
     return self._comparison_results[name].local_diff_diff_image
 
+  def _GeneratePublicTriageLink(self, internal_link):
+    """Generates a public triage link given an internal one.
+
+    Args:
+      internal_link: A string containing a triage link pointing to an internal
+          Gold instance.
+
+    Returns:
+      A string containing a triage link pointing to the public mirror of the
+      link pointed to by |internal_link|.
+    """
+    return internal_link.replace('%s-gold' % self._instance,
+                                 '%s-public-gold' % self._instance)
+
   def _ClearTriageLinkFile(self):
     """Clears the contents of the triage link file.
 
@@ -419,6 +487,17 @@ class SkiaGoldSession(object):
 
   def _CreateDiffOutputDir(self):
     return tempfile.mkdtemp(dir=self._working_dir)
+
+  def _GetDiffGoldInstance(self):
+    """Gets the Skia Gold instance to use for the Diff step.
+
+    This can differ based on how a particular instance is set up, mainly
+    depending on whether it is set up for internal results or not.
+    """
+    # TODO(skbug.com/10610): Decide whether to use the public or
+    # non-public instance once authentication is fixed for the non-public
+    # instance.
+    return str(self._instance) + '-public'
 
   def _StoreDiffLinks(self, image_name, output_manager, output_dir):
     """Stores the local diff files as links.
