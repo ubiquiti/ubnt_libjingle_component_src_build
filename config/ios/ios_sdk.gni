@@ -126,17 +126,17 @@ if(ios_device_name != "macosx" ) {
 
 if (ios_sdk_path == "") {
   # Compute default target.
-  if (target_environment == "simulator") {
-    ios_sdk_name = "iphonesimulator"
-    ios_sdk_platform = "iPhoneSimulator"
-  } else if (target_environment == "device") {
-    ios_sdk_name = "iphoneos"
-    ios_sdk_platform = "iPhoneOS"
-  } else if (target_environment == "catalyst") {
+  if(ios_device_name != "macosx" ) {
+    if (use_ios_simulator) {
+      ios_sdk_name = ios_device_name + "simulator"
+      ios_sdk_platform = ios_device_name + "Simulator"
+    } else {
+      ios_sdk_name = ios_device_name + "os"
+      ios_sdk_platform = ios_device_name + "OS"
+    }
+  } else {
     ios_sdk_name = "macosx"
     ios_sdk_platform = "MacOSX"
-  } else {
-    assert(false, "unsupported environment: $target_environment")
   }
 
   ios_sdk_info_args = [
@@ -158,6 +158,7 @@ if (ios_sdk_path == "") {
   }
   script_name = "//build/config/mac/sdk_info.py"
   _ios_sdk_result = exec_script(script_name, ios_sdk_info_args, "scope")
+  ios_sdk_platform_abs_path = _ios_sdk_result.sdk_platform_path
   ios_sdk_path = _ios_sdk_result.sdk_path
   ios_sdk_platform_path = _ios_sdk_result.sdk_platform_path
   ios_sdk_version = _ios_sdk_result.sdk_version

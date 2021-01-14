@@ -44,6 +44,9 @@ config("compiler") {
   }
 
   # Environment.
+  if (ios_device_name == "macosx") {
+    target_environment = "catalyst"
+  }
   if (target_environment == "simulator") {
     triplet_environment = "-simulator"
   } else if (target_environment == "device") {
@@ -55,7 +58,15 @@ config("compiler") {
   }
 
   # OS.
-  triplet_os = "apple-ios"
+  triplet_os = ""
+  if ((ios_device_name == "iphone") || (ios_device_name == "macosx")) {
+    triplet_os = "apple-ios"
+  } else if (ios_device_name == "appletv") {
+    triplet_os = "apple-tvos"
+  } else {
+    assert(false, "unsupported device: $ios_device_name")
+  }
+  
 
   # Set target.
   common_flags = [
@@ -107,7 +118,7 @@ config("runtime_library") {
     _sdk_root,
   ]
 
-  if (target_environment == "catalyst") {
+  if ((target_environment == "catalyst") || (ios_device_name == "macosx")) {
     common_flags += [
       "-isystem",
       "$_sdk_root/System/iOSSupport/usr/include",
