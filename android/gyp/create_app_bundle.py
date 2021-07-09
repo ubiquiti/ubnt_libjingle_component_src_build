@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 #
 # Copyright 2018 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
@@ -7,12 +7,10 @@
 """Create an Android application bundle from one or more bundle modules."""
 
 import argparse
-import itertools
 import json
 import os
 import shutil
 import sys
-import tempfile
 import zipfile
 
 sys.path.append(
@@ -106,9 +104,6 @@ def _ParseArgs(args):
                       action='store_true',
                       help='Treat all warnings as errors.')
 
-  parser.add_argument('--keystore-path', help='Keystore path')
-  parser.add_argument('--keystore-password', help='Keystore password')
-  parser.add_argument('--key-name', help='Keystore key name')
   parser.add_argument(
       '--validate-services',
       action='store_true',
@@ -121,13 +116,6 @@ def _ParseArgs(args):
 
   if len(options.module_zips) == 0:
     raise Exception('The module zip list cannot be empty.')
-
-  # Signing is optional, but all --keyXX parameters should be set.
-  if options.keystore_path or options.keystore_password or options.key_name:
-    if not options.keystore_path or not options.keystore_password or \
-        not options.key_name:
-      raise Exception('When signing the bundle, use --keystore-path, '
-                      '--keystore-password and --key-name.')
 
   # Merge all uncompressed assets into a set.
   uncompressed_list = []
@@ -386,7 +374,7 @@ def _WriteBundlePathmap(module_pathmap_paths, module_names,
       if not os.path.exists(module_pathmap_path):
         continue
       module_pathmap = _LoadPathmap(module_pathmap_path)
-      for short_path, long_path in module_pathmap.iteritems():
+      for short_path, long_path in module_pathmap.items():
         rebased_long_path = '{}/{}'.format(module_name, long_path)
         rebased_short_path = '{}/{}'.format(module_name, short_path)
         line = '{} -> {}\n'.format(rebased_long_path, rebased_short_path)
@@ -500,10 +488,6 @@ def main(args):
 
     tmp_bundle = os.path.join(tmp_dir, 'tmp_bundle')
 
-    tmp_unsigned_bundle = tmp_bundle
-    if options.keystore_path:
-      tmp_unsigned_bundle = tmp_bundle + '.unsigned'
-
     # Important: bundletool requires that the bundle config file is
     # named with a .pb.json extension.
     tmp_bundle_config = tmp_bundle + '.BundleConfig.pb.json'
@@ -516,7 +500,7 @@ def main(args):
         bundletool.BUNDLETOOL_JAR_PATH,
         'build-bundle',
         '--modules=' + ','.join(module_zips),
-        '--output=' + tmp_unsigned_bundle,
+        '--output=' + tmp_bundle,
         '--config=' + tmp_bundle_config,
     ]
 
@@ -532,25 +516,7 @@ def main(args):
       # isolated splits disabled and 2s for bundles with isolated splits
       # enabled.  Consider making this run in parallel or move into a separate
       # step before enabling isolated splits by default.
-      _MaybeCheckServicesAndProvidersPresentInBase(tmp_unsigned_bundle,
-                                                   module_zips)
-
-    if options.keystore_path:
-      # NOTE: As stated by the public documentation, apksigner cannot be used
-      # to sign the bundle (because it rejects anything that isn't an APK).
-      # The signature and digest algorithm selection come from the internal
-      # App Bundle documentation. There is no corresponding public doc :-(
-      signing_cmd_args = [
-          'jarsigner', '-sigalg', 'SHA256withRSA', '-digestalg', 'SHA-256',
-          '-keystore', 'file:' + options.keystore_path,
-          '-storepass' , options.keystore_password,
-          '-signedjar', tmp_bundle,
-          tmp_unsigned_bundle,
-          options.key_name,
-      ]
-      build_utils.CheckOutput(signing_cmd_args,
-                              print_stderr=True,
-                              fail_on_output=options.warnings_as_errors)
+      _MaybeCheckServicesAndProvidersPresentInBase(tmp_bundle, module_zips)
 
     shutil.move(tmp_bundle, options.out_bundle)
 
