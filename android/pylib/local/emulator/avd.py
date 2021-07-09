@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+
 import contextlib
 import json
 import logging
@@ -262,6 +263,7 @@ class AvdConfig(object):
             'hw.lcd.density': density,
             'hw.lcd.height': height,
             'hw.lcd.width': width,
+            'hw.mainKeys': 'no',  # Show nav buttons on screen
         })
 
         if self.avd_settings.ram_size:
@@ -375,7 +377,7 @@ class AvdConfig(object):
         pkgs_by_dir[pkg.dest_path] = []
       pkgs_by_dir[pkg.dest_path].append(pkg)
 
-    for pkg_dir, pkgs in pkgs_by_dir.iteritems():
+    for pkg_dir, pkgs in list(pkgs_by_dir.items()):
       logging.info('Installing packages in %s', pkg_dir)
       cipd_root = os.path.join(constants.DIR_SOURCE_ROOT, pkg_dir)
       if not os.path.exists(cipd_root):
@@ -530,6 +532,10 @@ class _AvdInstance(object):
           '-report-console',
           'unix:%s' % socket_path,
           '-no-boot-anim',
+          # Set the gpu mode to swiftshader_indirect otherwise the avd may exit
+          # with the error "change of render" under window mode
+          '-gpu',
+          'swiftshader_indirect',
       ]
 
       if read_only:

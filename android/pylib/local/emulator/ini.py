@@ -8,6 +8,10 @@ import contextlib
 import os
 
 
+import contextlib
+import os
+
+
 def loads(ini_str, strict=True):
   ret = {}
   for line in ini_str.splitlines():
@@ -27,7 +31,7 @@ def load(fp):
 
 def dumps(obj):
   ret = ''
-  for k, v in sorted(obj.iteritems()):
+  for k, v in sorted(obj.items()):
     ret += '%s = %s\n' % (k, str(v))
   return ret
 

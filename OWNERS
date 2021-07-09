@@ -1,3 +1,5 @@
+set noparent
+# NOTE: keep this in sync with lsc-owners-override@chromium.org owners
 agrieve@chromium.org
 brucedawson@chromium.org
 dpranke@google.com
@@ -7,10 +9,12 @@ thomasanderson@chromium.org
 tikuta@chromium.org
 
 # Clang build config changes:
-hans@chromium.org
+file://tools/clang/scripts/OWNERS
 
 # For java build changes:
 wnwen@chromium.org
+
+# NOTE: keep this in sync with lsc-owners-override@chromium.org owners
 
 per-file .gitignore=*
 per-file check_gn_headers_whitelist.txt=*

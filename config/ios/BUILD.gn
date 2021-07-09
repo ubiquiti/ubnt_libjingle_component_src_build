@@ -24,48 +24,38 @@ declare_args() {
   enable_ios_bitcode = false
 }
 
-# CPU architecture.
-if (current_cpu == "x64") {
-  triplet_cpu = "x86_64"
-} else if (current_cpu == "x86") {
-  triplet_cpu = "i386"
-} else if (current_cpu == "arm" || current_cpu == "armv7") {
-  triplet_cpu = "armv7"
-} else if (current_cpu == "arm64") {
-  triplet_cpu = "arm64"
-} else {
-  assert(false, "unsupported cpu: $current_cpu")
-}
-
-# Environment.
-if (ios_device_name == "macosx") {
-  target_environment = "catalyst"
-}
-if (target_environment == "simulator") {
-  triplet_environment = "-simulator"
-} else if (target_environment == "device") {
-  triplet_environment = ""
-} else if (target_environment == "catalyst") {
-  triplet_environment = "-macabi"
-} else {
-  assert(false, "unsupported environment: $target_environment")
-}
-
-# OS.
-triplet_os = ""
-if ((ios_device_name == "iphone") || (ios_device_name == "macosx")) {
-  triplet_os = "apple-ios"
-} else if (ios_device_name == "appletv") {
-  triplet_os = "apple-tvos"
-} else {
-  assert(false, "unsupported device: $ios_device_name")
-}
-
 # This is included by reference in the //build/config/compiler config that
 # is applied to all targets. It is here to separate out the logic.
 config("compiler") {
   # These flags are shared between the C compiler and linker.
-  common_flags = []  
+  common_flags = []
+
+  # CPU architecture.
+  if (current_cpu == "x64") {
+    triplet_cpu = "x86_64"
+  } else if (current_cpu == "x86") {
+    triplet_cpu = "i386"
+  } else if (current_cpu == "arm" || current_cpu == "armv7") {
+    triplet_cpu = "armv7"
+  } else if (current_cpu == "arm64") {
+    triplet_cpu = "arm64"
+  } else {
+    assert(false, "unsupported cpu: $current_cpu")
+  }
+
+  # Environment.
+  if (target_environment == "simulator") {
+    triplet_environment = "-simulator"
+  } else if (target_environment == "device") {
+    triplet_environment = ""
+  } else if (target_environment == "catalyst") {
+    triplet_environment = "-macabi"
+  } else {
+    assert(false, "unsupported environment: $target_environment")
+  }
+
+  # OS.
+  triplet_os = "apple-ios"
 
   # Set target.
   common_flags = [
@@ -117,7 +107,7 @@ config("runtime_library") {
     _sdk_root,
   ]
 
-  if ((target_environment == "catalyst") || (ios_device_name == "macosx")) {
+  if (target_environment == "catalyst") {
     common_flags += [
       "-isystem",
       "$_sdk_root/System/iOSSupport/usr/include",
@@ -126,14 +116,7 @@ config("runtime_library") {
     ]
   }
 
-  # print("use_xcode_clang: ${use_xcode_clang}")
-  # print("enable_ios_bitcode: ${enable_ios_bitcode}")
-  # print("target_environment: ${target_environment}")
-
-  if (use_xcode_clang
-    && enable_ios_bitcode
-    && ((target_environment == "device") || (target_environment == "catalyst"))
-    ) {
+  if (use_xcode_clang && enable_ios_bitcode && target_environment == "device") {
     if (is_debug) {
       common_flags += [ "-fembed-bitcode-marker" ]
     } else {
@@ -213,8 +196,21 @@ config("ios_shared_library_flags") {
   ]
 }
 
+config("disable_implicit_retain_self_warning") {
+  cflags_objc = [ "-Wno-implicit-retain-self" ]
+  cflags_objcc = cflags_objc
+}
+
 config("xctest_config") {
-  framework_dirs = [ "$ios_sdk_platform_path/Developer/Library/Frameworks" ]
+  # Use -iframework for XCTest.framework so that the compiler will treat it as a
+  # system framework and ignore warnings in XCTest framework headers.
+  common_flags = [
+    "-iframework",
+    rebase_path("$ios_sdk_platform_path/Developer/Library/Frameworks",
+                root_build_dir),
+  ]
+  cflags = common_flags
+  ldflags = common_flags
 
   frameworks = [
     "Foundation.framework",
@@ -234,7 +230,7 @@ _xctrunner_path =
 # are below $root_build_dir, it is not possible to list them as a target input
 # without gn complaining (as it can't find a target creating those files).
 #
-# The symlinks are created by //build/config/mac/sdk_info.py script invoked
+# The symlinks are created by //build/config/apple/sdk_info.py script invoked
 # via exec_script() from //build/config/{ios/ios_sdk.gni,mac/mac_sdk.gni}.
 # As the invocation is done by exec_script, there is no target that can list
 # those files as output.

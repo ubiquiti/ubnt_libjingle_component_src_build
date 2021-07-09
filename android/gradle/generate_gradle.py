@@ -1,4 +1,4 @@
-#!/usr/bin/env vpython
+#!/usr/bin/env vpython3
 # Copyright 2016 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
@@ -83,7 +83,7 @@ def _RebasePath(path_or_list, new_cwd=None, old_cwd=None):
   """
   if path_or_list is None:
     return []
-  if not isinstance(path_or_list, basestring):
+  if not isinstance(path_or_list, str):
     return [_RebasePath(p, new_cwd, old_cwd) for p in path_or_list]
   if old_cwd is None:
     old_cwd = constants.GetOutDirectory()
@@ -132,7 +132,7 @@ def _QueryForAllGnTargets(output_dir):
       '--nested', '--build', '--output-directory', output_dir
   ]
   logging.info('Running: %r', cmd)
-  return subprocess.check_output(cmd).splitlines()
+  return subprocess.check_output(cmd, encoding='UTF-8').splitlines()
 
 
 class _ProjectEntry(object):
@@ -435,10 +435,10 @@ def _ComputeJavaSourceDirsAndExcludes(output_dir, java_files):
   if java_files:
     java_files = _RebasePath(java_files)
     computed_dirs = _ComputeJavaSourceDirs(java_files)
-    java_dirs = computed_dirs.keys()
+    java_dirs = list(computed_dirs.keys())
     all_found_java_files = set()
 
-    for directory, files in computed_dirs.iteritems():
+    for directory, files in computed_dirs.items():
       found_java_files = build_utils.FindInDirectory(directory, '*.java')
       all_found_java_files.update(found_java_files)
       unwanted_java_files = set(found_java_files) - set(files)
@@ -523,7 +523,7 @@ def _GenerateBaseVars(generator, build_vars):
   variables['compile_sdk_version'] = (
       'android-%s' % build_vars['compile_sdk_version'])
   target_sdk_version = build_vars['android_sdk_version']
-  if target_sdk_version.isalpha():
+  if str(target_sdk_version).isalpha():
     target_sdk_version = '"{}"'.format(target_sdk_version)
   variables['target_sdk_version'] = target_sdk_version
   variables['use_gradle_process_resources'] = (
@@ -570,7 +570,7 @@ def _GenerateGradleFile(entry, generator, build_vars, jinja_processor):
       test_entry = generator.Generate(e)
       test_entry['android_manifest'] = generator.GenerateManifest(e)
       variables['android_test'].append(test_entry)
-      for key, value in test_entry.iteritems():
+      for key, value in test_entry.items():
         if isinstance(value, list):
           test_entry[key] = sorted(set(value) - set(variables['main'][key]))
 

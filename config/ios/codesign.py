@@ -63,7 +63,7 @@ def LoadPlistFile(plist_path):
         subprocess.check_output(
             ['xcrun', 'plutil', '-convert', 'xml1', '-o', '-', plist_path]))
   else:
-    with open(plist_path) as fp:
+    with open(plist_path, 'rb') as fp:
       return plistlib.load(fp)
 
 
@@ -89,10 +89,8 @@ class Bundle(object):
 
   @staticmethod
   def Kind(platform, extension):
-    if platform == 'iphonesimulator' or platform == 'iphoneos' or platform == 'macosx':
+    if platform == 'iphonesimulator' or platform == 'iphoneos':
       return 'ios'
-    if platform == 'appletvsimulator' or platform == 'appletvos':
-      return 'tvos'
     if platform == 'macosx':
       if extension == '.framework':
         return 'mac_framework'
