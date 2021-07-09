@@ -4218,7 +4218,7 @@ if (enable_java_templates) {
 
     action_with_pydeps(_unpack_target_name) {
       # TODO(crbug.com/1112471): Get this to run cleanly under Python 3.
-      run_under_python2 = true
+      #run_under_python2 = true
 
       script = "//build/android/gyp/aar.py"  # Unzips the AAR
       args = [
