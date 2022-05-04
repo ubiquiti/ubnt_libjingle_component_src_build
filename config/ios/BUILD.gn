@@ -125,8 +125,7 @@ config("runtime_library") {
   # print("enable_ios_bitcode: ${enable_ios_bitcode}")
   # print("target_environment: ${target_environment}")
 
-  if (use_xcode_clang
-    && enable_ios_bitcode
+  if (enable_ios_bitcode
     && ((target_environment == "device") || (target_environment == "catalyst"))
     ) {
     if (is_debug) {
