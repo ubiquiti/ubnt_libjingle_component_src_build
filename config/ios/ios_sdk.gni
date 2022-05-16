@@ -136,7 +136,10 @@ if (ios_sdk_path == "") {
   } else if (target_environment == "catalyst") {
     ios_sdk_name = "macosx"
     ios_sdk_platform = "MacOSX"
-  } else {
+  } else if (target_environment == "appletv") {
+    ios_sdk_name = "appletvos"
+    ios_sdk_platform = "appletvOS"
+  }else {
     assert(false, "unsupported environment: $target_environment")
   }
 

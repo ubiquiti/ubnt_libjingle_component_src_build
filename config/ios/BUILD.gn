@@ -31,6 +31,14 @@ config("compiler") {
     assert(false, "unsupported cpu: $current_cpu")
   }
 
+  # OS.
+  triplet_os = ""
+  if (target_environment == "appletv") {
+    triplet_os = "apple-tvos"
+  } else {
+    triplet_os = "apple-ios"
+  }
+
   # Environment.
   if (target_environment == "simulator") {
     triplet_environment = "-simulator"
@@ -38,12 +46,9 @@ config("compiler") {
     triplet_environment = ""
   } else if (target_environment == "catalyst") {
     triplet_environment = "-macabi"
-  } else {
+  } else if (target_environment != "appletv") {
     assert(false, "unsupported environment: $target_environment")
   }
-
-  # OS.
-  triplet_os = "apple-ios"
 
   # Set target.
   common_flags = [
