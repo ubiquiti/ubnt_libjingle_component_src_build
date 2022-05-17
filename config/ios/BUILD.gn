@@ -33,20 +33,20 @@ config("compiler") {
 
   # OS.
   triplet_os = ""
-  if (target_environment == "appletv" || target_environment == "appletvsimulator") {
+  if (is_tvos) {
     triplet_os = "apple-tvos"
   } else {
     triplet_os = "apple-ios"
   }
 
   # Environment.
-  if (target_environment == "simulator" || target_environment == "appletvsimulator") {
+  if (target_environment == "simulator") {
     triplet_environment = "-simulator"
   } else if (target_environment == "device" || target_environment == "appletv") {
     triplet_environment = ""
   } else if (target_environment == "catalyst") {
     triplet_environment = "-macabi"
-  } else if (target_environment != "appletv") {
+  } else {
     assert(false, "unsupported environment: $target_environment")
   }
 
@@ -169,7 +169,7 @@ config("ios_dynamic_flags") {
   # with version N of the SDK on older version of the OS) is relative to the
   # toolchains directory and changes with the environment.
   _swift_compatibility_libs_dir_prefix = "$ios_toolchains_path/usr/lib/swift"
-  if (target_environment == "simulator" || target_environment == "appletvsimulator") {
+  if (target_environment == "simulator") {
     _swift_compatibility_libs_dir =
         "$_swift_compatibility_libs_dir_prefix/iphonesimulator"
   } else if (target_environment == "device" || target_environment == "appletv") {
