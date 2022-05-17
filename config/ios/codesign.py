@@ -90,7 +90,7 @@ class Bundle(object):
 
   @staticmethod
   def Kind(platform, extension):
-    if platform == 'iphonesimulator' or platform == 'iphoneos' or platform == 'macosx':
+    if platform == 'iphonesimulator' or platform == 'iphoneos':
       return 'ios'
     if platform == 'appletvsimulator' or platform == 'appletvos':
       return 'tvos'

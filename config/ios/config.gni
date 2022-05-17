@@ -24,5 +24,8 @@ if (target_environment == "") {
   }
 }
 
+is_tvos = target_environment == "appletv" || target_environment == "appletvsimulator"
+
 assert(target_environment == "simulator" || target_environment == "device" ||
-       target_environment == "catalyst")
+       target_environment == "catalyst" || target_environment == "appletv" || 
+       target_environment == "appletvsimulator")
