@@ -136,8 +136,13 @@ if (ios_sdk_path == "") {
       ios_sdk_platform = "iPhoneSimulator"
     }
   } else if (target_environment == "device") {
-    ios_sdk_name = "iphoneos"
-    ios_sdk_platform = "iPhoneOS"
+    if (is_tvos) {
+      ios_sdk_name = "appletvsimulator"
+      ios_sdk_platform = "appletvSimulator"
+    } else {
+      ios_sdk_name = "iphoneos"
+      ios_sdk_platform = "iPhoneOS"
+    }
   } else if (target_environment == "catalyst") {
     ios_sdk_name = "macosx"
     ios_sdk_platform = "MacOSX"
