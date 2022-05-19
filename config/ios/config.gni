@@ -16,9 +16,7 @@ declare_args() {
   is_cronet_build = false
 }
 
-is_tvos = target_environment == "appletv" || target_environment == "appletvsimulator"
-
-if (target_environment == "" || target_environment == "appletvsimulator") {
+if (target_environment == "") {
   if (current_cpu == "x86" || current_cpu == "x64") {
     target_environment = "simulator"
   } else {
@@ -27,4 +25,4 @@ if (target_environment == "" || target_environment == "appletvsimulator") {
 }
 
 assert(target_environment == "simulator" || target_environment == "device" ||
-       target_environment == "catalyst" || target_environment == "appletv")
+       target_environment == "catalyst")
