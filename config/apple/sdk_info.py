@@ -136,7 +136,7 @@ def main():
                       'returns the symlinked paths as SDK info instead '
                       'of the original location.')
   parser.add_argument('platform',
-                      choices=['iphoneos', 'iphonesimulator', 'macosx'])
+                      choices=['iphoneos', 'iphonesimulator', 'macosx', 'appletvos', 'appletvsimulator'])
   args = parser.parse_args()
   if args.developer_dir:
     os.environ['DEVELOPER_DIR'] = args.developer_dir
