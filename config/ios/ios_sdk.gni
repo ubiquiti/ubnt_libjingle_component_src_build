@@ -69,6 +69,16 @@ declare_args() {
 
   # Set to true if all test apps should use the same bundle id.
   ios_use_shared_bundle_id_for_test_apps = true
+
+  # Enabling this option makes clang compile to an intermediate
+  # representation ("bitcode"), and not to native code. This is preferred
+  # when including WebRTC in the apps that will be sent to Apple's App Store
+  # and mandatory for the apps that run on watchOS or tvOS.
+  #
+  # Mimicking how Xcode handles it, the production builds (is_debug = false)
+  # get real bitcode sections added, while the debug builds (is_debug = true)
+  # only get bitcode-section "markers" added in them.
+  enable_ios_bitcode = false
 }
 
 declare_args() {
@@ -83,6 +93,8 @@ declare_args() {
 
 assert(custom_toolchain == "" || additional_target_cpus == [],
        "cannot define both custom_toolchain and additional_target_cpus")
+
+use_ios_simulator = (target_environment == "simulator")
 
 # If codesigning is enabled, use must configure either a codesigning identity
 # or a filter to automatically select the codesigning identity.
@@ -117,17 +129,17 @@ if (additional_target_cpus != [] && !is_fat_secondary_toolchain) {
 
 if (ios_sdk_path == "") {
   # Compute default target.
-  if (target_environment == "simulator") {
-    ios_sdk_name = "iphonesimulator"
-    ios_sdk_platform = "iPhoneSimulator"
-  } else if (target_environment == "device") {
-    ios_sdk_name = "iphoneos"
-    ios_sdk_platform = "iPhoneOS"
-  } else if (target_environment == "catalyst") {
+  if(ios_device_name != "macosx" ) {
+    if (use_ios_simulator) {
+      ios_sdk_name = ios_device_name + "simulator"
+      ios_sdk_platform = ios_device_name + "Simulator"
+    } else {
+      ios_sdk_name = ios_device_name + "os"
+      ios_sdk_platform = ios_device_name + "OS"
+    }
+  } else {
     ios_sdk_name = "macosx"
     ios_sdk_platform = "MacOSX"
-  } else {
-    assert(false, "unsupported environment: $target_environment")
   }
 
   ios_sdk_info_args = [
@@ -151,6 +163,7 @@ if (ios_sdk_path == "") {
   }
   script_name = "//build/config/apple/sdk_info.py"
   _ios_sdk_result = exec_script(script_name, ios_sdk_info_args, "scope")
+  ios_sdk_platform_abs_path = _ios_sdk_result.sdk_platform_path
   ios_bin_path =
       rebase_path("${_ios_sdk_result.toolchains_path}/usr/bin/", root_build_dir)
   ios_sdk_path = _ios_sdk_result.sdk_path
