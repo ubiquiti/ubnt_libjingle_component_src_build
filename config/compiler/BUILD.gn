@@ -527,12 +527,16 @@ config("compiler") {
   if (is_clang && !is_nacl && current_os != "zos") {
     cflags += [ "-fcrash-diagnostics-dir=" + clang_diagnostic_dir ]
 
-    # TODO(hans): Remove this once Clang generates better optimized debug info
-    # by default. https://crbug.com/765793
-    cflags += [
-      "-mllvm",
-      "-instcombine-lower-dbg-declare=0",
-    ]
+    # https://chromium-review.googlesource.com/c/chromium/src/+/3406209
+    # -mllvm is not supported with -fembed-bitcode
+    if (!(is_ios && enable_ios_bitcode)) {
+      # TODO(hans): Remove this once Clang generates better optimized debug info
+      # by default. https://crbug.com/765793
+      cflags += [
+        "-mllvm",
+        "-instcombine-lower-dbg-declare=0",
+      ]
+    }
     if (!is_debug && use_thin_lto && is_a_target_toolchain) {
       if (is_win) {
         ldflags += [ "-mllvm:-instcombine-lower-dbg-declare=0" ]
@@ -2377,7 +2381,8 @@ config("symbols") {
       cflags += [ "-g2" ]
     }
 
-    if (!is_nacl && is_clang && !is_tsan && !is_asan) {
+    if (!is_nacl && is_clang && !is_tsan && !is_asan && 
+        !(is_ios && enable_ios_bitcode)) {
       # gcc generates dwarf-aranges by default on -g1 and -g2. On clang it has
       # to be manually enabled.
       #

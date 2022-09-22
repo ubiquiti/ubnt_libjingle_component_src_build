@@ -9,38 +9,48 @@ import("//build/toolchain/rbe.gni")
 import("//build/toolchain/toolchain.gni")
 import("//build_overrides/build.gni")
 
+# CPU architecture.
+if (current_cpu == "x64") {
+  triplet_cpu = "x86_64"
+} else if (current_cpu == "x86") {
+  triplet_cpu = "i386"
+} else if (current_cpu == "arm" || current_cpu == "armv7") {
+  triplet_cpu = "armv7"
+} else if (current_cpu == "arm64") {
+  triplet_cpu = "arm64"
+} else {
+  assert(false, "unsupported cpu: $current_cpu")
+}
+
+# Environment.
+if (ios_device_name == "macosx") {
+  target_environment = "catalyst"
+}
+if (target_environment == "simulator") {
+  triplet_environment = "-simulator"
+} else if (target_environment == "device") {
+  triplet_environment = ""
+} else if (target_environment == "catalyst") {
+  triplet_environment = "-macabi"
+} else {
+  assert(false, "unsupported environment: $target_environment")
+}
+
+# OS.
+triplet_os = ""
+if ((ios_device_name == "iphone") || (ios_device_name == "macosx")) {
+  triplet_os = "apple-ios"
+} else if (ios_device_name == "appletv") {
+  triplet_os = "apple-tvos"
+} else {
+  assert(false, "unsupported device: $ios_device_name")
+}
+
 # This is included by reference in the //build/config/compiler config that
 # is applied to all targets. It is here to separate out the logic.
 config("compiler") {
   # These flags are shared between the C compiler and linker.
-  common_flags = []
-
-  # CPU architecture.
-  if (current_cpu == "x64") {
-    triplet_cpu = "x86_64"
-  } else if (current_cpu == "x86") {
-    triplet_cpu = "i386"
-  } else if (current_cpu == "arm" || current_cpu == "armv7") {
-    triplet_cpu = "armv7"
-  } else if (current_cpu == "arm64") {
-    triplet_cpu = "arm64"
-  } else {
-    assert(false, "unsupported cpu: $current_cpu")
-  }
-
-  # Environment.
-  if (target_environment == "simulator") {
-    triplet_environment = "-simulator"
-  } else if (target_environment == "device") {
-    triplet_environment = ""
-  } else if (target_environment == "catalyst") {
-    triplet_environment = "-macabi"
-  } else {
-    assert(false, "unsupported environment: $target_environment")
-  }
-
-  # OS.
-  triplet_os = "apple-ios"
+  common_flags = []  
 
   # Set target.
   common_flags = [
@@ -92,7 +102,7 @@ config("runtime_library") {
     _sdk_root,
   ]
 
-  if (target_environment == "catalyst") {
+  if ((target_environment == "catalyst") || (ios_device_name == "macosx")) {
     common_flags += [
       "-isystem",
       "$_sdk_root/System/iOSSupport/usr/include",
@@ -106,6 +116,20 @@ config("runtime_library") {
       "-Fsystem",
       "$_sdk_root/System/iOSSupport/System/Library/Frameworks",
     ]
+  }
+
+  # print("use_xcode_clang: ${use_xcode_clang}")
+  # print("enable_ios_bitcode: ${enable_ios_bitcode}")
+  # print("target_environment: ${target_environment}")
+
+  if (enable_ios_bitcode
+    && ((target_environment == "device") || (target_environment == "catalyst"))
+    ) {
+    if (is_debug) {
+      common_flags += [ "-fembed-bitcode-marker" ]
+    } else {
+      common_flags += [ "-fembed-bitcode" ]
+    }
   }
 
   asmflags = common_flags
