@@ -555,12 +555,14 @@ config("compiler") {
       cflags += [ "-ffp-contract=off" ]
     }
 
-    if (default_toolchain != "//build/toolchain/cros:target") {
-      # TODO(crbug.com/1361629): Fix the compiler so this is not needed.
-      cflags += [
-        "-mllvm",
-        "-simplifycfg-hoist-common-skip-limit=0",
-      ]
+    if (!(is_ios && enable_ios_bitcode)) {
+      if (default_toolchain != "//build/toolchain/cros:target") {
+        # TODO(crbug.com/1361629): Fix the compiler so this is not needed.
+        cflags += [
+          "-mllvm",
+          "-simplifycfg-hoist-common-skip-limit=0",
+        ]
+      }
     }
   }
 
