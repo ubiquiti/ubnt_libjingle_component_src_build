@@ -177,8 +177,11 @@ config("ios_dynamic_flags") {
   # toolchains directory and changes with the environment.
   _swift_compatibility_libs_dir_prefix = "$ios_toolchains_path/usr/lib/swift"
   if (target_environment == "simulator") {
-    _swift_compatibility_libs_dir =
-        "$_swift_compatibility_libs_dir_prefix/iphonesimulator"
+    if (ios_device_name == "appletv") {
+      _swift_compatibility_libs_dir = "$_swift_compatibility_libs_dir_prefix/appletvsimulator"
+    } else {
+      _swift_compatibility_libs_dir = "$_swift_compatibility_libs_dir_prefix/iphonesimulator"
+    }
   } else if (target_environment == "device") {
     _swift_compatibility_libs_dir =
         "$_swift_compatibility_libs_dir_prefix/iphoneos"
