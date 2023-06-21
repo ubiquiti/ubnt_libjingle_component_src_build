@@ -738,8 +738,11 @@ config("compiler") {
         # of import_instr_limit 30 with a binary size hit smaller than ~2 MiB.
         import_instr_limit = 5
       }
-
-      ldflags += [ "-Wl,-mllvm,-import-instr-limit=$import_instr_limit" ]
+# UI Customization Begin : enable_ios_bitcode conflic
+      if (is_chromeos || is_android) {
+        ldflags += [ "-Wl,-mllvm,-import-instr-limit=$import_instr_limit" ]
+      }
+# UI Customization End
     }
 
     # TODO(https://crbug.com/1211155): investigate why this isn't effective on
