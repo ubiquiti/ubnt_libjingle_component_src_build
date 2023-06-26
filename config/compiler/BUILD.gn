@@ -738,7 +738,7 @@ config("compiler") {
         # of import_instr_limit 30 with a binary size hit smaller than ~2 MiB.
         import_instr_limit = 5
       }
-
+      
       ldflags += [ "-Wl,-mllvm,-import-instr-limit=$import_instr_limit" ]
     }
 
@@ -1311,7 +1311,11 @@ config("compiler_codegen") {
     # This can be removed once https://bugs.llvm.org/show_bug.cgi?id=40348
     # has been resolved, and -mno-outline is obeyed by the linker during
     # ThinLTO.
-    ldflags += [ "-Wl,-mllvm,-enable-machine-outliner=never" ]
+# UI Customization Begin : enable_ios_bitcode conflic
+      if (is_chromeos || is_android) {
+        ldflags += [ "-Wl,-mllvm,-enable-machine-outliner=never" ]
+      }
+# UI Customization End
   }
 
   asmflags = cflags
@@ -1785,7 +1789,7 @@ config("chromium_code") {
     }
 
     # TODO(https://crbug.com/1355871): Enable on more platforms.
-    if (!is_ios && !is_chromecast) {
+    if (!is_ios) {
       cflags += [ "-Wextra-semi" ]
     }
   }
