@@ -14,6 +14,9 @@ declare_args() {
   } else {
     ios_deployment_target = "16.0"
   }
+
+  # the iOS device that we build for. Alternatives: iphone, appletv and watch. Defaulted to iphone
+  ios_device_name = "iphone"
 }
 
 # Always assert that ios_deployment_target is used on non-iOS platforms to
