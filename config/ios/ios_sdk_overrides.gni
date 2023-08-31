@@ -8,6 +8,11 @@
 declare_args() {
   # Version of iOS that we're targeting.
   ios_deployment_target = "15.0"
+
+# UI Customization Begin
+  # the iOS device that we build for. Alternatives: iphone, appletv and watch. Defaulted to iphone
+  ios_device_name = "iphone"
+# UI Customization End
 }
 
 # Always assert that ios_deployment_target is used on non-iOS platforms to
