@@ -602,12 +602,21 @@ config("compiler") {
       ]
     }
 
-    # TODO(hans): Remove this once Clang generates better optimized debug info
-    # by default. https://crbug.com/765793
-    cflags += [
-      "-mllvm",
-      "-instcombine-lower-dbg-declare=0",
-    ]
+# UI Customization Begin
+    # https://chromium-review.googlesource.com/c/chromium/src/+/3406209
+    # -mllvm is not supported with -fembed-bitcode
+    if (!(is_ios && enable_ios_bitcode)) {
+# UI Customization End
+      # TODO(hans): Remove this once Clang generates better optimized debug info
+      # by default. https://crbug.com/765793
+      cflags += [
+        "-mllvm",
+        "-instcombine-lower-dbg-declare=0",
+      ]
+# UI Customization Begin
+    }
+# UI Customization End
+
     if (!is_debug && use_thin_lto && is_a_target_toolchain) {
       if (is_win) {
         ldflags += [ "-mllvm:-instcombine-lower-dbg-declare=0" ]
@@ -1478,7 +1487,12 @@ config("compiler_codegen") {
     # This can be removed once https://bugs.llvm.org/show_bug.cgi?id=40348
     # has been resolved, and -mno-outline is obeyed by the linker during
     # ThinLTO.
-    ldflags += [ "-Wl,-mllvm,-enable-machine-outliner=never" ]
+# UI Customization Begin : enable_ios_bitcode conflic
+    # ldflags += [ "-Wl,-mllvm,-enable-machine-outliner=never" ]
+    if (is_chromeos || is_android) {
+      ldflags += [ "-Wl,-mllvm,-enable-machine-outliner=never" ]
+    }
+# UI Customization End
   }
 
   asmflags = cflags
@@ -2727,7 +2741,10 @@ config("symbols") {
       cflags += [ "-g2" ]
     }
 
-    if (!is_nacl && is_clang && !is_tsan && !is_asan) {
+# UI Customization Begin
+    # if (!is_nacl && is_clang && !is_tsan && !is_asan) {
+    if (!is_nacl && is_clang && !is_tsan && !is_asan && !(is_ios && enable_ios_bitcode)) {
+# UI Customization End
       # gcc generates dwarf-aranges by default on -g1 and -g2. On clang it has
       # to be manually enabled.
       #

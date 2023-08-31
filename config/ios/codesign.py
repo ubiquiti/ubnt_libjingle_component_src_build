@@ -91,6 +91,10 @@ class Bundle(object):
   def Kind(platform, extension):
     if platform == 'iphonesimulator' or platform == 'iphoneos':
       return 'ios'
+# UI Customization Begin
+    if platform == 'appletvsimulator' or platform == 'appletvos':
+      return 'tvos'
+# UI Customization End
     if platform == 'macosx':
       if extension == '.framework':
         return 'mac_framework'

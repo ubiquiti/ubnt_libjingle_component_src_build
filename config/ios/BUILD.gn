@@ -10,38 +10,79 @@ import("//build/toolchain/siso.gni")
 import("//build/toolchain/toolchain.gni")
 import("//build_overrides/build.gni")
 
+# UI Customization Begin
+# CPU architecture.
+if (current_cpu == "x64") {
+  triplet_cpu = "x86_64"
+} else if (current_cpu == "x86") {
+  triplet_cpu = "i386"
+} else if (current_cpu == "arm" || current_cpu == "armv7") {
+  triplet_cpu = "armv7"
+} else if (current_cpu == "arm64") {
+  triplet_cpu = "arm64"
+} else {
+  assert(false, "unsupported cpu: $current_cpu")
+}
+
+# Environment.
+if (ios_device_name == "macosx") {
+  target_environment = "catalyst"
+}
+if (target_environment == "simulator") {
+  triplet_environment = "-simulator"
+} else if (target_environment == "device") {
+  triplet_environment = ""
+} else if (target_environment == "catalyst") {
+  triplet_environment = "-macabi"
+} else {
+  assert(false, "unsupported environment: $target_environment")
+}
+
+# OS.
+triplet_os = ""
+if ((ios_device_name == "iphone") || (ios_device_name == "macosx")) {
+  triplet_os = "apple-ios"
+} else if (ios_device_name == "appletv") {
+  triplet_os = "apple-tvos"
+} else {
+  assert(false, "unsupported device: $ios_device_name")
+}
+# UI Customization End
+
 # This is included by reference in the //build/config/compiler config that
 # is applied to all targets. It is here to separate out the logic.
 config("compiler") {
   # These flags are shared between the C compiler and linker.
   common_flags = []
 
-  # CPU architecture.
-  if (current_cpu == "x64") {
-    triplet_cpu = "x86_64"
-  } else if (current_cpu == "x86") {
-    triplet_cpu = "i386"
-  } else if (current_cpu == "arm" || current_cpu == "armv7") {
-    triplet_cpu = "armv7"
-  } else if (current_cpu == "arm64") {
-    triplet_cpu = "arm64"
-  } else {
-    assert(false, "unsupported cpu: $current_cpu")
-  }
+# UI Customization Begin
+  # # CPU architecture.
+  # if (current_cpu == "x64") {
+  #   triplet_cpu = "x86_64"
+  # } else if (current_cpu == "x86") {
+  #   triplet_cpu = "i386"
+  # } else if (current_cpu == "arm" || current_cpu == "armv7") {
+  #   triplet_cpu = "armv7"
+  # } else if (current_cpu == "arm64") {
+  #   triplet_cpu = "arm64"
+  # } else {
+  #   assert(false, "unsupported cpu: $current_cpu")
+  # }
 
-  # Environment.
-  if (target_environment == "simulator") {
-    triplet_environment = "-simulator"
-  } else if (target_environment == "device") {
-    triplet_environment = ""
-  } else if (target_environment == "catalyst") {
-    triplet_environment = "-macabi"
-  } else {
-    assert(false, "unsupported environment: $target_environment")
-  }
+  # # Environment.
+  # if (target_environment == "simulator") {
+  #   triplet_environment = "-simulator"
+  # } else if (target_environment == "device") {
+  #   triplet_environment = ""
+  # } else if (target_environment == "catalyst") {
+  #   triplet_environment = "-macabi"
+  # } else {
+  #   assert(false, "unsupported environment: $target_environment")
+  # }
 
-  # OS.
-  triplet_os = "apple-ios"
+  # # OS.
+  # triplet_os = "apple-ios"
+# UI Customization End
 
   # Set target.
   common_flags = [
@@ -114,7 +155,10 @@ config("runtime_library") {
     _sdk_root,
   ]
 
-  if (target_environment == "catalyst") {
+# UI Customization Begin
+  # if (target_environment == "catalyst") {
+  if ((target_environment == "catalyst") || (ios_device_name == "macosx")) {
+# UI Customization End
     common_flags += [
       "-isystem",
       "$_sdk_root/System/iOSSupport/usr/include",
@@ -129,6 +173,16 @@ config("runtime_library") {
       "$_sdk_root/System/iOSSupport/System/Library/Frameworks",
     ]
   }
+
+# UI Customization Begin
+  if (enable_ios_bitcode && ((target_environment == "device") || (target_environment == "catalyst"))) {
+    if (is_debug) {
+      common_flags += [ "-fembed-bitcode-marker" ]
+    } else {
+      common_flags += [ "-fembed-bitcode" ]
+    }
+  }
+# UI Customization End
 
   asmflags = common_flags
   cflags = common_flags
@@ -182,7 +236,15 @@ config("ios_dynamic_flags") {
   }
 
   if (target_environment == "simulator") {
-    _swift_compatibility_libs_suffix = "iphonesimulator"
+# UI Customization Begin
+    if (ios_device_name == "appletv") {
+      _swift_compatibility_libs_suffix = "appletvsimulator"
+    } else {
+# UI Customization End
+      _swift_compatibility_libs_suffix = "iphonesimulator"
+# UI Customization Begin
+    }
+# UI Customization End
   } else if (target_environment == "device") {
     _swift_compatibility_libs_suffix = "iphoneos"
   } else if (target_environment == "catalyst") {
