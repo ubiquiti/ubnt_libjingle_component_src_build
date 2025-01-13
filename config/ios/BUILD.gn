@@ -194,8 +194,11 @@ config("ios_dynamic_flags") {
       _swift_compatibility_libs_dir = "$_swift_compatibility_libs_dir_prefix/iphonesimulator"
     }
   } else if (target_environment == "device") {
-    _swift_compatibility_libs_dir =
-        "$_swift_compatibility_libs_dir_prefix/iphoneos"
+    if (ios_device_name == "appletv") {
+      _swift_compatibility_libs_dir = "$_swift_compatibility_libs_dir_prefix/appletvos"
+    } else {
+      _swift_compatibility_libs_dir = "$_swift_compatibility_libs_dir_prefix/iphoneos"
+    }
   } else if (target_environment == "catalyst") {
     # The Swift compatibility libraries have changed location starting with
     # Xcode 13.0, so check the version of Xcode when deciding which path to
